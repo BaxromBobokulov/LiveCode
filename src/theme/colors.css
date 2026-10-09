@@ -1,0 +1,28 @@
+/* Colors — from AGENTS.md § UI Implementation Rules, verified against the
+   Playground reference (src/assets/prompt_materials/home-screen.png).
+   Tailwind's default palette is cleared so only these tokens can be used,
+   e.g. bg-accent, text-textMuted, border-borderStrong. */
+@theme static {
+  --color-*: initial;
+
+  --color-white: #ffffff;
+
+  /* Accent */
+  --color-accent: #2e5bff;
+  --color-accentDark: #1e40d8;
+  --color-accentTint: #edf1ff;
+
+  /* Borders */
+  --color-border: #e3e6ea;
+  --color-borderStrong: #cfd4db;
+
+  /* Text */
+  --color-text: #15181d;
+  --color-textMuted: #667085;
+  --color-textFaint: #9aa1ac;
+
+  /* Neutral fills measured from the Playground reference */
+  --color-surface: #fafbfc; /* explanation box, console */
+  --color-subtle: #f4f5f7; /* tab track */
+  --color-track: #eef0f3; /* progress bar track */
+}

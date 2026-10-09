@@ -1,0 +1,9 @@
+/* Radii — measured from the Playground reference. */
+@theme {
+  /* Buttons, dropdown, active tab, chips */
+  --radius-control: 6px;
+  /* Logo, variable boxes, explanation, console */
+  --radius-container: 8px;
+  /* Panels and the tab track */
+  --radius-panel: 10px;
+}

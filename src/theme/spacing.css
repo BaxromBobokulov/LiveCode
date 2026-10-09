@@ -1,0 +1,8 @@
+/* Spacing — Tailwind's 4px base scale (p-1 = 4px, h-9 = 36px, h-9.5 = 38px).
+   Component sizes measured from the design reference:
+     buttons / dropdown: 38px tall (h-9.5)
+     tabs: 36px tall with a 4px inset (h-9 p-1)
+     progress bar: 8px tall (h-2) */
+@theme {
+  --spacing: 4px;
+}

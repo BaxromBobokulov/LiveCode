@@ -1,0 +1,62 @@
+/* Typography — IBM Plex Sans for UI text, IBM Plex Mono for code, variables
+   and console output (AGENTS.md). Both are loaded in index.html.
+   Each text-* utility sets size, line-height and weight together, e.g. text-h1, text-body-md. */
+@theme static {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* H1 — Page / Screen Title */
+  --text-h1: 32px;
+  --text-h1--line-height: 1.2;
+  --text-h1--font-weight: 700;
+
+  /* H2 — Section Title */
+  --text-h2: 24px;
+  --text-h2--line-height: 1.3;
+  --text-h2--font-weight: 600;
+
+  /* H3 — Card / Module Title */
+  --text-h3: 20px;
+  --text-h3--line-height: 1.3;
+  --text-h3--font-weight: 600;
+
+  /* H4 — Subheading */
+  --text-h4: 16px;
+  --text-h4--line-height: 1.4;
+  --text-h4--font-weight: 500;
+
+  /* Brand — "CodeVision" wordmark in the header */
+  --text-brand: 18px;
+  --text-brand--line-height: 24px;
+  --text-brand--font-weight: 700;
+
+  /* Body Large — Important content */
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 1.6;
+  --text-body-lg--font-weight: 400;
+
+  /* Body Medium — Body text, panel titles, explanations */
+  --text-body-md: 14px;
+  --text-body-md--line-height: 22px;
+  --text-body-md--font-weight: 400;
+
+  /* Body Small — Buttons, step counter */
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 20px;
+  --text-body-sm--font-weight: 400;
+
+  /* Label — section labels like "Variables" */
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-label--font-weight: 600;
+
+  /* Code — editor lines (13px on a 22px line) */
+  --text-code: 13px;
+  --text-code--line-height: 22px;
+  --text-code--font-weight: 400;
+
+  /* Caption — Labels, meta text */
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-caption--font-weight: 400;
+}
