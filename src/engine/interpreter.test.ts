@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { examples } from '../data/examples'
 import { CodeError, UnsupportedConstructError } from './errors'
 import { runUserCode } from './interpreter'
 import type { Step } from './types'
@@ -122,6 +123,99 @@ describe('runUserCode', () => {
     expect(steps[1].explanation).toBe('Leave add and go back to main, returning a + b: 2 + 3 = 5.')
     expect(steps[2].explanation).toBe('Create s and set it to add(2, 3) (5).')
     expect(steps[3].output).toBe('5\n')
+  })
+
+  it('traces reads and writes on a 2D array', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    int grid[2][3] = {{1, 2, 3}, {4, 5, 6}};',
+        '    int x = grid[1][2];',
+        '    grid[0][0] = grid[0][0] + 4;',
+        '    grid[1][0]++;',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    expect(steps[0].explanation).toBe('Declare an int 2D array grid with 2 rows and 3 columns: [[1, 2, 3], [4, 5, 6]].')
+    expect(steps[0].variables).toEqual([{ name: 'grid', value: '[[1, 2, 3], [4, 5, 6]]' }])
+    expect(steps[0].array).toEqual({ name: 'grid', values: [[1, 2, 3], [4, 5, 6]], activeIndex: null })
+
+    expect(steps[1].explanation).toBe('Read grid[1][2] (value 6). Create x and set it to grid[1][2] (6).')
+    expect(steps[1].array?.activeIndex).toEqual({ row: 1, col: 2 })
+
+    expect(steps[2].explanation).toBe('Read grid[0][0] (value 1). Set grid[0][0] to grid[0][0] + 4: 1 + 4 = 5.')
+    expect(steps[2].changed).toEqual(['grid'])
+    expect(steps[2].array).toEqual({ name: 'grid', values: [[5, 2, 3], [4, 5, 6]], activeIndex: { row: 0, col: 0 } })
+
+    expect(steps[3].explanation).toBe('Increase grid[1][0] by 1. grid[1][0] is now 5.')
+    expect(steps[3].array?.activeIndex).toEqual({ row: 1, col: 0 })
+  })
+
+  it('passes a 2D array to a function by reference', () => {
+    const steps = stepsOf(
+      lines(
+        'void fill(int g[][2]) {',
+        '    g[1][1] = 9;',
+        '}',
+        'int main() {',
+        '    int grid[2][2];',
+        '    fill(grid);',
+        '    printf("%d\\n", grid[1][1]);',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(steps.at(-1)?.output).toBe('9\n')
+  })
+
+  it('reports an out-of-range 2D index as a code error', () => {
+    const result = runUserCode(lines('int main() {', '    int g[2][2] = {{1, 2}, {3, 4}};', '    g[0][2] = 1;', '    return 0;', '}'))
+    expect('error' in result && result.error).toBeInstanceOf(CodeError)
+    expect('error' in result && result.error.message).toBe(
+      'g[0][2] is outside the array. Each row of g has 2 columns, so valid column indexes are 0 to 1.',
+    )
+  })
+
+  it('reports a 3D array as not supported', () => {
+    const result = runUserCode(lines('int main() {', '    int cube[2][2][2];', '    return 0;', '}'))
+    expect('error' in result && result.error).toBeInstanceOf(UnsupportedConstructError)
+    expect('error' in result && result.error).toMatchObject({ line: 2, construct: '3D array' })
+  })
+
+  it.each(examples.map((example) => [example.id, example] as const))(
+    'agrees with the hand-authored %s example',
+    (_, example) => {
+      const steps = stepsOf(example.code.join('\n'))
+      expect(steps.map((s) => s.line)).toEqual(example.steps.map((s) => s.line))
+      expect(steps.at(-1)?.output).toBe(example.steps.at(-1)?.output)
+
+      // Bubble sort highlights both cells of a compare or swap, which only the hand-authored trace does.
+      if (example.steps.some((s) => s.array && 'secondIndex' in s.array)) return
+      expect(steps.map((s) => s.array?.activeIndex ?? null)).toEqual(example.steps.map((s) => s.array?.activeIndex ?? null))
+    },
+  )
+
+  it('highlights the element a loop body is about to use on the loop check', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    int arr[3] = {4, 8, 15};',
+        '    int i = 0;',
+        '    while (i < 3) {',
+        '        arr[i] = arr[i] * 2;',
+        '        i++;',
+        '    }',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    const checks = steps.filter((s) => s.line === 4)
+    expect(checks.map((s) => s.array?.activeIndex)).toEqual([0, 1, 2, null])
+    // The check shows the array as it was before the body changed it.
+    expect(checks[1].array?.values).toEqual([8, 8, 15])
   })
 
   it('reports a pointer as not supported, with its line', () => {

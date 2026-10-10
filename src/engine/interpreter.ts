@@ -14,12 +14,12 @@ import {
   type Stmt,
   type Target,
 } from './parser'
-import type { ArrayView, LoopInfo, Step } from './types'
+import type { ArrayView, GridCell, GridView, LoopInfo, Step } from './types'
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
 
-/** Largest array the array view can reasonably show. */
+/** Largest array (in total cells, for a 2D array) the array view can reasonably show. */
 const MAX_ARRAY_SIZE = 100
 
 // Common C library functions, so calling one gives "not supported yet" rather than "doesn't exist".
@@ -33,7 +33,9 @@ const libraryFunctions = new Set([
 type Scalar = { kind: 'scalar'; type: NumType; value: number | null }
 /** Arrays are shared by reference, so a function that receives one changes the caller's array. */
 type ArrayStore = { kind: 'array'; type: NumType; values: number[] }
-type Slot = Scalar | ArrayStore
+/** A 2D array: one inner array per row. Shared by reference, like ArrayStore. */
+type GridStore = { kind: 'grid'; type: NumType; values: number[][] }
+type Slot = Scalar | ArrayStore | GridStore
 
 /** One running function call. */
 type Frame = {
@@ -74,8 +76,18 @@ function convert(value: number, type: NumType): number {
 }
 
 function formatSlot(slot: Slot): string {
-  if (slot.kind === 'array') return `[${slot.values.map((v) => formatNumber(v, slot.type)).join(', ')}]`
+  const formatRow = (row: number[]) => `[${row.map((v) => formatNumber(v, slot.type)).join(', ')}]`
+  if (slot.kind === 'array') return formatRow(slot.values)
+  if (slot.kind === 'grid') return `[${slot.values.map(formatRow).join(', ')}]`
   return slot.value === null ? '?' : formatNumber(slot.value, slot.type)
+}
+
+/** What the array view shows for an array, with `active` as the element or cell in use. */
+function arrayView(name: string, store: ArrayStore | GridStore, active: number | GridCell | null): ArrayView | GridView {
+  if (store.kind === 'grid') {
+    return { name, values: store.values.map((row) => [...row]), activeIndex: typeof active === 'object' ? active : null }
+  }
+  return { name, values: [...store.values], activeIndex: typeof active === 'number' ? active : null }
 }
 
 /** Wraps an operand's text in parentheses when the source would need them, e.g. "(4 + 8) * 2". */
@@ -111,8 +123,16 @@ export function execute(program: Program): Step[] {
   const steps: Step[] = []
   const frames: Frame[] = []
   let output = ''
-  /** The array element the current statement read or wrote. It is shown as active in the array view. */
-  let access: { name: string; store: ArrayStore; index: number } | null = null
+  /** The array element or 2D cell the current statement read or wrote. It is shown as active in the array view. */
+  let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell } | null = null
+  /** 2D cells the current statement read, explained before what the statement did. */
+  let cellReads: StepFact[] = []
+  /**
+   * A loop check whose body runs next, with the arrays as they were at the check. If the body's
+   * first step uses an array element, the check highlights it too, one step early, the same way
+   * the hand-authored examples do.
+   */
+  let pendingCheck: { step: Step; frame: Frame; arrays: Map<string, ArrayStore | GridStore> } | null = null
 
   const frame = () => frames[frames.length - 1]
   const callerName = () => (frames.length > 1 ? frames[frames.length - 2].fn.name : null)
@@ -130,12 +150,18 @@ export function execute(program: Program): Step[] {
 
     // Inner blocks come last, so a shadowing variable replaces the outer one's value.
     const variables = new Map<string, string>()
-    let firstArray: ArrayView | null = null
+    let firstArray: ArrayView | GridView | null = null
     for (const scope of current.scopes) {
       for (const [name, slot] of scope) {
         variables.set(name, formatSlot(slot))
-        if (slot.kind === 'array' && !firstArray) firstArray = { name, values: [...slot.values], activeIndex: null }
+        if (slot.kind !== 'scalar' && !firstArray) firstArray = arrayView(name, slot, null)
       }
+    }
+
+    if (pendingCheck) {
+      const before = access && pendingCheck.frame === current ? pendingCheck.arrays.get(access.name) : undefined
+      if (access && before) pendingCheck.step.array = arrayView(access.name, before, access.active)
+      pendingCheck = null
     }
 
     const loopRun = current.loops[current.loops.length - 1]
@@ -144,12 +170,25 @@ export function execute(program: Program): Step[] {
       scope: `${current.fn.name}()`,
       variables: [...variables].map(([name, value]) => ({ name, value })),
       changed,
-      array: access ? { name: access.name, values: [...access.store.values], activeIndex: access.index } : firstArray,
+      array: access ? arrayView(access.name, access.store, access.active) : firstArray,
       loop: loopRun?.infos.at(-1) ?? null,
       output,
-      explanation: explain(fact),
+      explanation: [...cellReads, fact].map(explain).join(' '),
     })
     access = null
+    cellReads = []
+  }
+
+  /** Copies of the arrays visible right now, by name. Inner blocks win, as for variables. */
+  function arraysInScope(): Map<string, ArrayStore | GridStore> {
+    const arrays = new Map<string, ArrayStore | GridStore>()
+    for (const scope of frame().scopes) {
+      for (const [name, slot] of scope) {
+        if (slot.kind === 'array') arrays.set(name, { ...slot, values: [...slot.values] })
+        if (slot.kind === 'grid') arrays.set(name, { ...slot, values: slot.values.map((row) => [...row]) })
+      }
+    }
+    return arrays
   }
 
   // ----- Functions -----
@@ -204,8 +243,20 @@ export function execute(program: Program): Step[] {
       const arg = expr.args[i]
       if (param.isArray) {
         const slot = arg.kind === 'var' ? lookup(arg.name, arg.line) : null
-        if (!slot || slot.kind !== 'array' || arg.kind !== 'var') {
-          throw new CodeError(expr.line, `${fn.name} expects an array for ${param.name}. Pass the array's name, e.g. ${fn.name}(arr, ...).`)
+        const isGridParam = param.columns !== null
+        if (!slot || slot.kind !== (isGridParam ? 'grid' : 'array') || arg.kind !== 'var') {
+          throw new CodeError(
+            expr.line,
+            isGridParam
+              ? `${fn.name} expects a 2D array for ${param.name}. Pass the array's name, e.g. ${fn.name}(grid, ...).`
+              : `${fn.name} expects an array for ${param.name}. Pass the array's name, e.g. ${fn.name}(arr, ...).`,
+          )
+        }
+        if (slot.kind === 'grid' && slot.values[0].length !== param.columns) {
+          throw new CodeError(
+            expr.line,
+            `${param.name} has ${param.columns} columns, but ${arg.name} has ${slot.values[0].length}. They must match.`,
+          )
         }
         if (slot.type !== param.type) {
           throw new CodeError(expr.line, `${param.name} is a ${param.type} array, but ${arg.name} is a ${slot.type} array.`)
@@ -224,9 +275,12 @@ export function execute(program: Program): Step[] {
 
     // The callee's steps shouldn't show the caller's array access, and vice versa.
     const callerAccess = access
+    const callerReads = cellReads
     access = null
+    cellReads = []
     const result = runFunction(fn, params, { kind: 'call', name: fn.name, args, params: shownParams })
     access = callerAccess
+    cellReads = callerReads
 
     if (result === null || fn.returnType === 'void') return null
     return { type: fn.returnType, value: result, work: formatNumber(result, fn.returnType) }
@@ -247,6 +301,7 @@ export function execute(program: Program): Step[] {
   function readScalar(name: string, line: number): Value {
     const slot = lookup(name, line)
     if (slot.kind === 'array') throw new CodeError(line, `${name} is an array. Use one element, e.g. ${name}[0].`)
+    if (slot.kind === 'grid') throw new CodeError(line, `${name} is a 2D array. Use one cell, e.g. ${name}[0][0].`)
     if (slot.value === null) throw new CodeError(line, `${name} is used before it has a value. Give it a value first.`)
     return { type: slot.type, value: slot.value, work: formatNumber(slot.value, slot.type) }
   }
@@ -254,34 +309,77 @@ export function execute(program: Program): Step[] {
   /** Finds the array element `arr[i]` refers to, and marks it as this step's active element. */
   function elementOf(expr: Extract<Expr, { kind: 'index' }>): { store: ArrayStore; index: number } {
     const store = lookup(expr.name, expr.line)
+    if (store.kind === 'grid') {
+      throw new CodeError(expr.line, `${expr.name} is a 2D array, so it needs two indexes, e.g. ${expr.name}[0][0].`)
+    }
     if (store.kind !== 'array') throw new CodeError(expr.line, `${expr.name} is not an array, so ${expr.name}[...] can't be used.`)
-    const index = evaluate(expr.index)
-    if (index.type !== 'int') {
-      throw new CodeError(expr.line, `An array index must be an int, but ${toSource(expr.index)} is a float.`)
-    }
     const size = store.values.length
-    if (index.value < 0 || index.value >= size) {
-      throw new CodeError(
-        expr.line,
-        `${expr.name}[${index.value}] is outside the array. ${expr.name} has ${size} elements, so valid indexes are 0 to ${size - 1}.`,
-      )
+    const index = evaluateIndex(
+      expr.index,
+      size,
+      expr.line,
+      (i) => `${expr.name}[${i}] is outside the array. ${expr.name} has ${size} elements, so valid indexes are 0 to ${size - 1}.`,
+    )
+    access = { name: expr.name, store, active: index }
+    return { store, index }
+  }
+
+  /** Finds the 2D array cell `grid[i][j]` refers to, and marks it as this step's active cell. */
+  function cellOf(expr: Extract<Expr, { kind: 'cell' }>): { store: GridStore; row: number; col: number } {
+    const store = lookup(expr.name, expr.line)
+    if (store.kind === 'array') {
+      throw new CodeError(expr.line, `${expr.name} is a 1D array, so it takes one index, e.g. ${expr.name}[0].`)
     }
-    access = { name: expr.name, store, index: index.value }
-    return { store, index: index.value }
+    if (store.kind !== 'grid') throw new CodeError(expr.line, `${expr.name} is not an array, so ${expr.name}[...][...] can't be used.`)
+    const rows = store.values.length
+    const cols = store.values[0].length
+    const row = evaluateIndex(
+      expr.row,
+      rows,
+      expr.line,
+      (r) => `${expr.name}[${r}][...] is outside the array. ${expr.name} has ${rows} rows, so valid row indexes are 0 to ${rows - 1}.`,
+    )
+    const col = evaluateIndex(
+      expr.col,
+      cols,
+      expr.line,
+      (c) =>
+        `${expr.name}[${row}][${c}] is outside the array. Each row of ${expr.name} has ${cols} columns, so valid column indexes are 0 to ${cols - 1}.`,
+    )
+    access = { name: expr.name, store, active: { row, col } }
+    return { store, row, col }
+  }
+
+  /** Works out an array index and checks it is an int from 0 to size - 1. */
+  function evaluateIndex(index: Expr, size: number, line: number, outsideMessage: (value: number) => string): number {
+    const value = evaluate(index)
+    if (value.type !== 'int') throw new CodeError(line, `An array index must be an int, but ${toSource(index)} is a float.`)
+    if (value.value < 0 || value.value >= size) throw new CodeError(line, outsideMessage(value.value))
+    return value.value
   }
 
   /** Something that can be read and written: a variable or an array element. */
   function resolveTarget(target: Target) {
     if (target.kind === 'var') {
       const slot = lookup(target.name, target.line)
-      if (slot.kind === 'array') {
-        throw new CodeError(target.line, `${target.name} is an array. Assign to one element instead, e.g. ${target.name}[0] = 1;`)
+      if (slot.kind !== 'scalar') {
+        const example = slot.kind === 'grid' ? `${target.name}[0][0] = 1;` : `${target.name}[0] = 1;`
+        throw new CodeError(target.line, `${target.name} is an array. Assign to one element instead, e.g. ${example}`)
       }
       return {
         label: target.name,
         type: slot.type,
         read: () => readScalar(target.name, target.line),
         write: (value: number) => (slot.value = convert(value, slot.type)),
+      }
+    }
+    if (target.kind === 'cell') {
+      const { store, row, col } = cellOf(target)
+      return {
+        label: `${target.name}[${row}][${col}]`,
+        type: store.type,
+        read: (): Value => ({ type: store.type, value: store.values[row][col], work: formatNumber(store.values[row][col], store.type) }),
+        write: (value: number) => (store.values[row][col] = convert(value, store.type)),
       }
     }
     const { store, index } = elementOf(target)
@@ -297,15 +395,10 @@ export function execute(program: Program): Step[] {
     const scope = frame().scopes[frame().scopes.length - 1]
     if (scope.has(d.name)) throw new CodeError(d.line, `${d.name} is already declared here.`)
 
+    if (d.isArray && d.columns) return declareGrid(type, d, d.columns, scope)
+
     if (d.isArray) {
-      let size = d.arrayInit?.length ?? 0
-      if (d.size) {
-        const value = evaluate(d.size)
-        if (value.type !== 'int' || value.value <= 0) {
-          throw new CodeError(d.line, `The size of ${d.name} must be a whole number above 0.`)
-        }
-        size = value.value
-      }
+      const size = d.size ? evaluateSize(d.size, d) : (d.arrayInit?.length ?? 0)
       if (size > MAX_ARRAY_SIZE) {
         throw new CodeError(d.line, `${d.name} is too big to show. Arrays can have at most ${MAX_ARRAY_SIZE} elements.`)
       }
@@ -330,6 +423,38 @@ export function execute(program: Program): Step[] {
     return { facts: [{ kind: 'declare', name: d.name, value: shown }], changed: [d.name] }
   }
 
+  /** `int grid[rows][cols] = {{...}, {...}};` */
+  function declareGrid(type: NumType, d: Declarator, columns: Expr, scope: Map<string, Slot>): Effect {
+    const cols = evaluateSize(columns, d)
+    const init = d.gridInit ?? []
+    const rows = d.size ? evaluateSize(d.size, d) : init.length
+    if (rows * cols > MAX_ARRAY_SIZE) {
+      throw new CodeError(d.line, `${d.name} is too big to show. Arrays can have at most ${MAX_ARRAY_SIZE} elements in total.`)
+    }
+    if (init.length > rows) throw new CodeError(d.line, `${d.name} has room for ${rows} rows, but ${init.length} were given.`)
+    init.forEach((row, r) => {
+      if (row.length > cols) {
+        throw new CodeError(d.line, `Row ${r} of ${d.name} has room for ${cols} values, but ${row.length} were given.`)
+      }
+    })
+
+    // Like 1D arrays, any cell without a value starts at 0.
+    const values = Array.from({ length: rows }, () => new Array<number>(cols).fill(0))
+    init.forEach((row, r) => row.forEach((expr, c) => (values[r][c] = convert(evaluate(expr).value, type))))
+    scope.set(d.name, { kind: 'grid', type, values })
+    const shown = d.gridInit ? values.map((row) => row.map((v) => formatNumber(v, type))) : null
+    return { facts: [{ kind: 'declareGrid', name: d.name, type, rows, cols, values: shown }], changed: [d.name] }
+  }
+
+  /** An array size (or a 2D array's row or column count): a whole number above 0. */
+  function evaluateSize(expr: Expr, d: Declarator): number {
+    const value = evaluate(expr)
+    if (value.type !== 'int' || value.value <= 0) {
+      throw new CodeError(d.line, `The size of ${d.name} must be a whole number above 0.`)
+    }
+    return value.value
+  }
+
   // ----- Expressions -----
 
   function evaluate(expr: Expr): Value {
@@ -343,6 +468,13 @@ export function execute(program: Program): Step[] {
       case 'index': {
         const { store, index } = elementOf(expr)
         return { type: store.type, value: store.values[index], work: formatNumber(store.values[index], store.type) }
+      }
+
+      case 'cell': {
+        const { store, row, col } = cellOf(expr)
+        const work = formatNumber(store.values[row][col], store.type)
+        cellReads.push({ kind: 'readCell', target: `${expr.name}[${row}][${col}]`, value: work })
+        return { type: store.type, value: store.values[row][col], work }
       }
 
       case 'unary': {
@@ -564,9 +696,13 @@ export function execute(program: Program): Step[] {
       } else {
         current.loops.pop() // the final check belongs to the enclosing loop, if any
       }
+      // A condition like `arr[i] != 0` already highlights the element it reads.
+      const checkUsesArray = access !== null
       emit(stmt.line, { kind: 'loopCheck', setup: setup.facts, isFirst, condition, result }, setup.changed)
       isFirst = false
       if (!result) break
+
+      if (!checkUsesArray) pendingCheck = { step: steps[steps.length - 1], frame: current, arrays: arraysInScope() }
 
       returned = run(stmt.body)
       if (returned) {

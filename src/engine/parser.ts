@@ -13,23 +13,29 @@ export type Expr =
   | { kind: 'number'; line: number; type: NumType; value: number }
   | { kind: 'var'; line: number; name: string }
   | { kind: 'index'; line: number; name: string; index: Expr }
+  /** One cell of a 2D array: `grid[row][col]`. */
+  | { kind: 'cell'; line: number; name: string; row: Expr; col: Expr }
   | { kind: 'unary'; line: number; op: '-' | '!'; operand: Expr }
   | { kind: 'binary'; line: number; op: BinaryOp; left: Expr; right: Expr }
   | { kind: 'call'; line: number; name: string; args: Expr[] }
 
-/** Something that can be assigned to: `x` or `arr[i]`. */
-export type Target = Extract<Expr, { kind: 'var' | 'index' }>
+/** Something that can be assigned to: `x`, `arr[i]` or `grid[i][j]`. */
+export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' }>
 
 export type Declarator = {
   line: number
   name: string
   isArray: boolean
-  /** Array size from `arr[size]`, or null for `arr[]` / plain variables. */
+  /** Array size from `arr[size]` (the row count for `grid[rows][cols]`), or null for `arr[]` / plain variables. */
   size: Expr | null
+  /** Column count from `grid[rows][cols]`. Only set for a 2D array. */
+  columns: Expr | null
   /** `= value` for a plain variable. */
   init: Expr | null
-  /** `= {a, b, c}` for an array. */
+  /** `= {a, b, c}` for a 1D array. */
   arrayInit: Expr[] | null
+  /** `= {{a, b}, {c, d}}` for a 2D array, one list per row. */
+  gridInit: Expr[][] | null
 }
 
 /** A printf argument: a value, or a text string for %s. */
@@ -47,7 +53,13 @@ export type Stmt =
   | { kind: 'return'; line: number; value: Expr | null }
   | { kind: 'block'; line: number; body: Stmt[] }
 
-export type Param = { name: string; type: NumType; isArray: boolean }
+export type Param = {
+  name: string
+  type: NumType
+  isArray: boolean
+  /** Column count of a 2D array parameter, e.g. 3 in `int grid[][3]`; null otherwise. */
+  columns: number | null
+}
 
 export type FunctionDecl = {
   name: string
@@ -87,6 +99,8 @@ export function toSource(expr: Expr): string {
       return expr.name
     case 'index':
       return `${expr.name}[${toSource(expr.index)}]`
+    case 'cell':
+      return `${expr.name}[${toSource(expr.row)}][${toSource(expr.col)}]`
     case 'unary': {
       const operand = toSource(expr.operand)
       return expr.operand.kind === 'binary' ? `${expr.op}(${operand})` : `${expr.op}${operand}`
@@ -291,13 +305,27 @@ export function parse(source: string): Program {
       // Names are optional in prototypes: "int add(int, int);"
       const name = peek().kind === 'identifier' ? advance().text : ''
       let isArray = false
+      let columns: number | null = null
       if (accept('[')) {
         if (peek().kind === 'number') advance()
         expect(']')
         isArray = true
-        if (is('[')) throw twoDimensionalError(peek().line)
+        // A 2D parameter must say how many columns it has: int grid[][3]
+        if (accept('[')) {
+          const columnsToken = peek()
+          if (columnsToken.kind !== 'number' || !/^\d+$/.test(columnsToken.text)) {
+            throw new CodeError(
+              columnsToken.line,
+              `A 2D array parameter needs its number of columns, e.g. int ${name || 'grid'}[][3].`,
+            )
+          }
+          advance()
+          expect(']')
+          columns = Number(columnsToken.text)
+          if (is('[')) throw tooManyDimensionsError(peek().line)
+        }
       }
-      params.push({ name, type, isArray })
+      params.push({ name, type, isArray, columns })
     }
     expect(')')
     return params
@@ -376,7 +404,7 @@ export function parse(source: string): Program {
     return statement
   }
 
-  /** `int x = 1, arr[3] = {1, 2, 3};` — including the final ";". */
+  /** `int x = 1, arr[3] = {1, 2, 3}, grid[2][2] = {{1, 2}, {3, 4}};` — including the final ";". */
   function parseDeclaration(): Stmt {
     const typeToken = advance()
     const type = typeToken.text as NumType
@@ -389,33 +417,42 @@ export function parse(source: string): Program {
         throw new CodeError(nameToken.line, `Functions must be defined outside of other functions. Move ${nameToken.text} out of this one.`)
       }
 
-      const declarator: Declarator = { line: nameToken.line, name: nameToken.text, isArray: false, size: null, init: null, arrayInit: null }
+      const declarator: Declarator = {
+        line: nameToken.line,
+        name: nameToken.text,
+        isArray: false,
+        size: null,
+        columns: null,
+        init: null,
+        arrayInit: null,
+        gridInit: null,
+      }
       if (accept('[')) {
         declarator.isArray = true
         if (!is(']')) declarator.size = parseExpression()
         expect(']')
-        if (is('[')) throw twoDimensionalError(peek().line)
+        if (accept('[')) {
+          if (is(']')) {
+            throw new CodeError(peek().line, `The number of columns of ${nameToken.text} must be given, e.g. ${nameToken.text}[3][4].`)
+          }
+          declarator.columns = parseExpression()
+          expect(']')
+          if (is('[')) throw tooManyDimensionsError(peek().line)
+        }
       }
 
       if (accept('=')) {
         if (declarator.isArray) {
           if (peek().kind === 'string') throw stringError(peek().line)
-          expect('{')
-          const values: Expr[] = []
-          while (!is('}')) {
-            if (values.length > 0) expect(',')
-            if (is('}')) break // trailing comma
-            values.push(parseExpression())
-          }
-          expect('}')
-          declarator.arrayInit = values
+          if (declarator.columns) declarator.gridInit = parseGridInit(nameToken.text)
+          else declarator.arrayInit = parseInitList()
         } else {
           if (is('{')) throw new CodeError(peek().line, `${nameToken.text} is not an array, so it can't be set to a { ... } list.`)
           declarator.init = parseExpression()
         }
       }
 
-      if (declarator.isArray && !declarator.size && !declarator.arrayInit) {
+      if (declarator.isArray && !declarator.size && !declarator.arrayInit && !declarator.gridInit) {
         throw new CodeError(nameToken.line, `The array ${nameToken.text} needs a size, e.g. ${nameToken.text}[5].`)
       }
       declarators.push(declarator)
@@ -423,6 +460,35 @@ export function parse(source: string): Program {
 
     expect(';')
     return { kind: 'declare', line: typeToken.line, type, declarators }
+  }
+
+  /** `{a, b, c}` */
+  function parseInitList(): Expr[] {
+    expect('{')
+    const values: Expr[] = []
+    while (!is('}')) {
+      if (values.length > 0) expect(',')
+      if (is('}')) break // trailing comma
+      values.push(parseExpression())
+    }
+    expect('}')
+    return values
+  }
+
+  /** `{{a, b}, {c, d}}` — one braced list per row. */
+  function parseGridInit(name: string): Expr[][] {
+    expect('{')
+    const rows: Expr[][] = []
+    while (!is('}')) {
+      if (rows.length > 0) expect(',')
+      if (is('}')) break // trailing comma
+      if (!is('{')) {
+        throw new CodeError(peek().line, `Write each row of ${name} in its own braces, e.g. {{1, 2}, {3, 4}}.`)
+      }
+      rows.push(parseInitList())
+    }
+    expect('}')
+    return rows
   }
 
   /** An assignment (`x = 1`, `arr[i] += 2`), an increment (`i++`), or a plain expression — without the ";". */
@@ -449,14 +515,23 @@ export function parse(source: string): Program {
     return { kind: 'expr', line, expr: parseExpression() }
   }
 
-  /** `x` or `arr[i]` on the left of an assignment. */
+  /** `x`, `arr[i]` or `grid[i][j]` on the left of an assignment. */
   function parseTarget(): Target {
     const nameToken = expectIdentifier()
-    if (!accept('[')) return { kind: 'var', line: nameToken.line, name: nameToken.text }
+    if (!is('[')) return { kind: 'var', line: nameToken.line, name: nameToken.text }
+    return parseIndexed(nameToken)
+  }
+
+  /** The `[i]` or `[i][j]` after an array's name. */
+  function parseIndexed(nameToken: Token): Extract<Expr, { kind: 'index' | 'cell' }> {
+    expect('[')
     const index = parseExpression()
     expect(']')
-    if (is('[')) throw twoDimensionalError(peek().line)
-    return { kind: 'index', line: nameToken.line, name: nameToken.text, index }
+    if (!accept('[')) return { kind: 'index', line: nameToken.line, name: nameToken.text, index }
+    const col = parseExpression()
+    expect(']')
+    if (is('[')) throw tooManyDimensionsError(peek().line)
+    return { kind: 'cell', line: nameToken.line, name: nameToken.text, row: index, col }
   }
 
   function parsePrintf(): Stmt {
@@ -558,12 +633,7 @@ export function parse(source: string): Program {
         expect(')')
         return { kind: 'call', line: token.line, name: token.text, args }
       }
-      if (accept('[')) {
-        const index = parseExpression()
-        expect(']')
-        if (is('[')) throw twoDimensionalError(peek().line)
-        return { kind: 'index', line: token.line, name: token.text, index }
-      }
+      if (is('[')) return parseIndexed(token)
       return { kind: 'var', line: token.line, name: token.text }
     }
 
@@ -612,8 +682,8 @@ function readFormatSpecifiers(format: string, line: number): string[] {
   return specifiers
 }
 
-function twoDimensionalError(line: number): UnsupportedConstructError {
-  return new UnsupportedConstructError(line, '2D array', 'Arrays with more than one dimension are not supported yet.')
+function tooManyDimensionsError(line: number): UnsupportedConstructError {
+  return new UnsupportedConstructError(line, '3D array', 'Arrays with more than two dimensions are not supported yet.')
 }
 
 function stringError(line: number): UnsupportedConstructError {

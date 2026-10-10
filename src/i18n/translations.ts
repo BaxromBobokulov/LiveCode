@@ -40,6 +40,12 @@ const en = {
   'example.max.tag': 'Conditions',
   'example.factorial.title': 'Factorial',
   'example.factorial.tag': 'Loops',
+  'example.fibonacci.title': 'Fibonacci Sequence',
+  'example.fibonacci.tag': 'Loops',
+  'example.bubbleSort.title': 'Bubble Sort',
+  'example.bubbleSort.tag': 'Loops · Arrays',
+  'example.matrix.title': 'Sum of a 3×3 Grid',
+  'example.matrix.tag': '2D Arrays',
   'example.user.title': 'Your Code',
 
   'learn.title': 'How CodeVision works',
@@ -49,7 +55,7 @@ const en = {
   'learn.p2':
     'Variables that changed on the current step are outlined in blue. When a program walks through an array, the array view marks the element in use and the loop tracker counts iterations. Anything printed with printf appears in the console. Use Next and Previous to go at your own pace, or Auto Play to step automatically.',
   'learn.p3':
-    "CodeVision understands a small part of C: int and float variables, one-dimensional arrays, if / else, for and while loops, functions and printf. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
+    "CodeVision understands a small part of C: int and float variables, one- and two-dimensional arrays, if / else, for and while loops, functions and printf. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
 }
 
 export type TranslationKey = keyof typeof en
@@ -91,6 +97,12 @@ const uz: Record<TranslationKey, string> = {
   'example.max.tag': 'Shartlar',
   'example.factorial.title': 'Faktorial',
   'example.factorial.tag': 'Sikllar',
+  'example.fibonacci.title': 'Fibonachchi ketma-ketligi',
+  'example.fibonacci.tag': 'Sikllar',
+  'example.bubbleSort.title': 'Pufakchali saralash',
+  'example.bubbleSort.tag': 'Sikllar · Massivlar',
+  'example.matrix.title': "3×3 jadval yig'indisi",
+  'example.matrix.tag': "Ikki o'lchovli massivlar",
   'example.user.title': 'Sizning kodingiz',
 
   'learn.title': 'CodeVision qanday ishlaydi',
@@ -99,7 +111,7 @@ const uz: Record<TranslationKey, string> = {
   'learn.p2':
     "Joriy qadamda o'zgargan o'zgaruvchilar ko'k chiziq bilan belgilanadi. Dastur massiv bo'ylab yurganda, massiv ko'rinishi ishlatilayotgan elementni belgilaydi, sikl kuzatuvchisi esa takrorlanishlarni sanaydi. printf bilan chiqarilgan hamma narsa konsolda paydo bo'ladi. O'z sur'atingizda yurish uchun Keyingi va Oldingi tugmalaridan, avtomatik qadamlash uchun esa Avto ijrodan foydalaning.",
   'learn.p3':
-    "CodeVision C tilining kichik bir qismini tushunadi: int va float o'zgaruvchilar, bir o'lchovli massivlar, if / else, for va while sikllari, funksiyalar va printf. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
+    "CodeVision C tilining kichik bir qismini tushunadi: int va float o'zgaruvchilar, bir va ikki o'lchovli massivlar, if / else, for va while sikllari, funksiyalar va printf. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
 }
 
 const ru: Record<TranslationKey, string> = {
@@ -140,6 +152,12 @@ const ru: Record<TranslationKey, string> = {
   'example.max.tag': 'Условия',
   'example.factorial.title': 'Факториал',
   'example.factorial.tag': 'Циклы',
+  'example.fibonacci.title': 'Последовательность Фибоначчи',
+  'example.fibonacci.tag': 'Циклы',
+  'example.bubbleSort.title': 'Сортировка пузырьком',
+  'example.bubbleSort.tag': 'Циклы · Массивы',
+  'example.matrix.title': 'Сумма таблицы 3×3',
+  'example.matrix.tag': 'Двумерные массивы',
   'example.user.title': 'Ваш код',
 
   'learn.title': 'Как работает CodeVision',
@@ -148,7 +166,7 @@ const ru: Record<TranslationKey, string> = {
   'learn.p2':
     'Переменные, изменившиеся на текущем шаге, обведены синим. Когда программа проходит по массиву, вид массива отмечает используемый элемент, а счётчик цикла считает итерации. Всё, что выведено через printf, появляется в консоли. Переходите по шагам кнопками «Далее» и «Назад» в своём темпе или включите «Автошаг».',
   'learn.p3':
-    'CodeVision понимает небольшую часть языка C: переменные int и float, одномерные массивы, if / else, циклы for и while, функции и printf. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
+    'CodeVision понимает небольшую часть языка C: переменные int и float, одномерные и двумерные массивы, if / else, циклы for и while, функции и printf. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
 }
 
 export const translations: Record<Locale, Record<TranslationKey, string>> = { en, uz, ru }

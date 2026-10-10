@@ -13,6 +13,9 @@ export type Shown = { source: string; work: string; result: string }
 export type StepFact =
   | { kind: 'declare'; name: string; value: Shown | null }
   | { kind: 'declareArray'; name: string; type: string; size: number; values: string[] | null }
+  | { kind: 'declareGrid'; name: string; type: string; rows: number; cols: number; values: string[][] | null }
+  /** A 2D array cell read while working out this line, e.g. target "grid[1][2]". */
+  | { kind: 'readCell'; target: string; value: string }
   | { kind: 'assign'; target: string; value: Shown }
   | { kind: 'update'; target: string; op: '++' | '--'; result: string }
   | { kind: 'expr'; value: Shown }
@@ -85,6 +88,17 @@ export function explain(fact: StepFact): string {
         ? `Declare ${fact.type === 'int' ? 'an' : 'a'} ${fact.type} array ${fact.name} with ${fact.size} elements: [${fact.values.join(', ')}].`
         : `Declare ${fact.type === 'int' ? 'an' : 'a'} ${fact.type} array ${fact.name} with ${fact.size} elements. They have no values yet (shown as 0).`
 
+    case 'declareGrid': {
+      const shape = `${fact.type === 'int' ? 'an' : 'a'} ${fact.type} 2D array ${fact.name} with ${fact.rows} rows and ${fact.cols} columns`
+      return fact.values
+        ? `Declare ${shape}: [${fact.values.map((row) => `[${row.join(', ')}]`).join(', ')}].`
+        : `Declare ${shape}. They have no values yet (shown as 0).`
+    }
+
+    case 'readCell':
+      return `Read ${fact.target} (value ${fact.value}).`
+
+    // Writes to a 2D cell use this too: the target names the exact cell, e.g. "Set grid[0][0] to grid[i][j] + 1: 4 + 1 = 5."
     case 'assign':
       return `Set ${fact.target} to ${showValue(fact.value)}.`
 

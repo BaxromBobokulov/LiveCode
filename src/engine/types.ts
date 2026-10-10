@@ -14,6 +14,25 @@ export type ArrayView = {
   values: number[]
   /** Index the current line reads or writes, or null when no element is in use. */
   activeIndex: number | null
+  /** A second element in use on this line, e.g. the other half of a swap. Highlighted like activeIndex. */
+  secondIndex?: number
+}
+
+/** One cell of a 2D array: grid[row][col]. */
+export type GridCell = { row: number; col: number }
+
+/** A 2D array, e.g. `int grid[3][3]`, drawn as rows × columns. */
+export type GridView = {
+  name: string
+  /** One inner array per row. */
+  values: number[][]
+  /** Cell the current line reads or writes, or null when no cell is in use. */
+  activeIndex: GridCell | null
+}
+
+/** Tells a 2D array view apart from a 1D one. */
+export function isGridView(view: ArrayView | GridView): view is GridView {
+  return Array.isArray(view.values[0])
 }
 
 /** Progress through the loop the current line belongs to. */
@@ -34,7 +53,7 @@ export type Step = {
   variables: Variable[]
   /** Names of the variables that changed on this step. */
   changed: string[]
-  array: ArrayView | null
+  array: ArrayView | GridView | null
   loop: LoopInfo | null
   /** Everything printed to the console so far. */
   output: string

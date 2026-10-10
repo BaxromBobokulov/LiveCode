@@ -143,9 +143,9 @@ Local component state is fine for anything that doesn't need to be shared (hover
 
 CodeVision runs arbitrary user-typed C code through its own in-browser interpreter (`src/engine/`), not a real C compiler. Pipeline: `lexer.ts` → `parser.ts` → `interpreter.ts`, with explanations from fixed templates in `explain.ts`. Output is a plain `Step[]`, matching the hand-authored examples exactly.
 
-**Supported subset:** `int`/`float` variables and 1D arrays, arithmetic/comparison/logical operators, `if`/`else if`/`else`, `for`/`while`, non-recursive functions (including arrays passed as parameters, function prototypes), `i++`/`+=`-style operators, unary `-`/`!`, `printf` with `%d %f %s` and `\n`.
+**Supported subset:** `int`/`float` variables, 1D arrays and 2D arrays (`int grid[3][3]`, `grid[i][j]`), arithmetic/comparison/logical operators, `if`/`else if`/`else`, `for`/`while`, non-recursive functions (including arrays passed as parameters, function prototypes), `i++`/`+=`-style operators, unary `-`/`!`, `printf` with `%d %f %s` and `\n`.
 
-**Not supported:** pointers, structs, 2D+ arrays, recursion, `break`/`continue`, `switch`, `double`/`char`, casts, `?:`, bitwise operators, `#include`s other than `<stdio.h>`, any stdlib function besides `printf` (e.g. `sqrt`, `scanf`), and printf precision placeholders like `%.2f`. These raise a specific `UnsupportedConstructError` naming the line and the construct.
+**Not supported:** pointers, structs, 3D+ arrays, recursion, `break`/`continue`, `switch`, `double`/`char`, casts, `?:`, bitwise operators, `#include`s other than `<stdio.h>`, any stdlib function besides `printf` (e.g. `sqrt`, `scanf`), and printf precision placeholders like `%.2f`. These raise a specific `UnsupportedConstructError` naming the line and the construct.
 
 **Runtime mistakes** in otherwise-supported code (division by zero, out-of-range array index, a runaway loop) raise a separate `CodeError` with `{ line, message }` — these are bugs in the user's program, not missing language features, and are reported differently in the UI.
 
