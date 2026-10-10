@@ -27,6 +27,13 @@ const dark = {
   selection: 'rgba(38, 79, 120, 0.85)',
   execLine: 'rgba(255, 255, 255, 0.07)',
 
+  // VS Code Dark+ suggestion dropdown
+  popup: '#252526',
+  popupBorder: '#454545',
+  popupSelected: '#04395E',
+  popupMatch: '#2AAAFF',
+  popupDetail: '#9D9D9D',
+
   // VS Code Dark+ syntax colors
   keyword: '#569CD6',
   flowKeyword: '#C586C0',
@@ -62,6 +69,18 @@ const editorChrome = EditorView.theme(
     // The currently executing line: a subtle light overlay plus the same 3px accent bar as light mode.
     '.cm-execLine': { backgroundColor: dark.execLine },
     '.cm-gutterElement.cm-execLine': { boxShadow: 'inset 3px 0 0 var(--color-accent)' },
+
+    // Autocomplete dropdown, styled like VS Code's suggestion list.
+    '.cm-tooltip.cm-tooltip-autocomplete': {
+      backgroundColor: dark.popup,
+      border: `1px solid ${dark.popupBorder}`,
+      color: dark.text,
+    },
+    '.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)', fontSize: '13px' },
+    '.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px' },
+    '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: dark.popupSelected, color: dark.text },
+    '.cm-completionMatchedText': { color: dark.popupMatch, textDecoration: 'none', fontWeight: '600' },
+    '.cm-completionDetail': { color: dark.popupDetail, fontStyle: 'normal', marginLeft: '12px' },
   },
   { dark: true },
 )

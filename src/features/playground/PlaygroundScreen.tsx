@@ -17,7 +17,7 @@ function PlaygroundScreen() {
   }, [isPlaying, stepIndex, next])
 
   return (
-    <div className="flex flex-col gap-5 min-[1000px]:flex-row min-[1000px]:items-start">
+    <div className="flex flex-col gap-5 min-[1000px]:flex-row">
       <EditorPanel />
       <ExecutionPanel />
     </div>

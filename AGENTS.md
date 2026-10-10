@@ -237,6 +237,17 @@ Keep animations short (150–250ms) and skip them when the user's system has `pr
 
 ---
 
+## Accessibility Rules
+
+- Text contrast must be at least 4.5:1 against its actual background (3:1 for text 24px and larger) — check this with a real WCAG contrast calculation from the rendered colors, not by eye, in both light and dark mode. If a token fails, fix the token (or add a dedicated one, as `accentHover`/`accentText` were added for this reason) rather than leaving it.
+- Colors that must be told apart also differ in lightness, not hue alone.
+- Use real interactive elements (`<button>`, `<a href>`, `<input>` with a `<label>`) — never a `div`/`span` with `role`/`onClick`.
+- Icon-only controls get an `aria-label`.
+- Touch targets are at least 44px.
+- When a feature changes color tokens or adds new UI, check contrast as part of that feature's own verification step — don't treat it as a separate pass someone else does later.
+
+---
+
 ## Code Simplicity Rules
 
 Avoid overengineering. Refactor only when repetition or real complexity appears. This project teaches programming concepts — its own source should be approachable to someone learning React.

@@ -8,7 +8,7 @@ function Select({ options, className = '', ...props }: SelectProps) {
   return (
     <div className={`relative ${className}`}>
       <select
-        className="h-9 w-full appearance-none rounded-control border border-borderStrong bg-white pr-9 pl-3.5 text-body-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="h-9 w-full appearance-none rounded-control border border-borderStrong bg-panel pr-9 pl-3.5 text-body-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
         {...props}
       >
         {options.map((option) => (

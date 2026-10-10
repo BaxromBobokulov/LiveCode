@@ -22,7 +22,7 @@ function Tabs<T extends string>({ tabs, value, onChange }: TabsProps<T>) {
             aria-selected={isActive}
             onClick={() => onChange(tab.id)}
             className={`rounded-control px-4 text-body-md font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-              isActive ? 'bg-white text-text shadow-xs' : 'text-textMuted hover:text-text'
+              isActive ? 'bg-panel text-text shadow-xs' : 'text-textMuted hover:text-text'
             }`}
           >
             {tab.label}

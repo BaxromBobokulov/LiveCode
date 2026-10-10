@@ -5,8 +5,8 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 const variantClasses = {
-  primary: 'bg-accent text-white enabled:hover:bg-accentDark',
-  secondary: 'border border-borderStrong bg-white text-text enabled:hover:bg-surface',
+  primary: 'bg-accent text-white enabled:hover:bg-accentHover',
+  secondary: 'border border-borderStrong bg-panel text-text enabled:hover:bg-surface',
 }
 
 function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {

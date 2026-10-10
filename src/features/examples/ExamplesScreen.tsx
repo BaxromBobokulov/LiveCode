@@ -1,6 +1,7 @@
 import CodeMirror from '@uiw/react-codemirror'
 import Chip from '../../components/Chip'
 import { examples } from '../../data/examples'
+import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { cLanguage, codeMirrorTheme, codePreview } from '../playground/codeMirrorTheme'
 
@@ -10,6 +11,7 @@ const previewLineCount = 4
 function ExamplesScreen() {
   const exampleId = usePlaygroundStore((state) => state.exampleId)
   const loadExample = usePlaygroundStore((state) => state.loadExample)
+  const { t, exampleText } = useTranslation()
 
   return (
     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -28,13 +30,13 @@ function ExamplesScreen() {
             key={example.id}
             type="button"
             onClick={() => loadExample(example.id)}
-            className={`flex flex-col overflow-hidden rounded-panel border bg-white text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            className={`flex flex-col overflow-hidden rounded-panel border bg-panel text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
               isLoaded ? 'border-accent' : 'border-border hover:border-borderStrong'
             }`}
           >
             <div className="flex w-full items-center justify-between gap-3 border-b border-border px-4.5 py-3.5">
-              <span className="text-body-md font-semibold text-text">{example.title}</span>
-              <Chip>{example.tag}</Chip>
+              <span className="text-body-md font-semibold text-text">{exampleText(example, 'title')}</span>
+              <Chip>{exampleText(example, 'tag')}</Chip>
             </div>
             {/* Same dark surface and syntax colors as the Playground editor. */}
             <CodeMirror
@@ -46,8 +48,8 @@ function ExamplesScreen() {
               className="w-full flex-1"
             />
             <div className="w-full border-t border-border px-4.5 py-3 text-body-sm text-textMuted">
-              {example.code.length} lines · {example.steps.length} steps
-              {isLoaded && <span className="font-semibold text-accent"> · Loaded</span>}
+              {t('examples.meta', { lines: example.code.length, steps: example.steps.length })}
+              {isLoaded && <span className="font-semibold text-accentText"> · {t('examples.loaded')}</span>}
             </div>
           </button>
         )

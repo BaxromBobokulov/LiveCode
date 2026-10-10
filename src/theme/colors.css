@@ -1,16 +1,25 @@
 /* Colors — from AGENTS.md § UI Implementation Rules, verified against the
    Playground reference (src/assets/prompt_materials/home-screen.png).
    Tailwind's default palette is cleared so only these tokens can be used,
-   e.g. bg-accent, text-textMuted, border-borderStrong. */
+   e.g. bg-accent, text-textMuted, border-borderStrong.
+   These are the light theme. The dark theme below swaps the same tokens, so
+   components never need dark: variants. */
 @theme static {
   --color-*: initial;
 
+  /* Literal white, e.g. text on an accent button. Same in both themes. */
   --color-white: #ffffff;
+
+  /* Page and card backgrounds */
+  --color-bg: #ffffff;
+  --color-panel: #ffffff; /* panels, cards, buttons, inputs, variable boxes */
 
   /* Accent */
   --color-accent: #2e5bff;
   --color-accentDark: #1e40d8;
   --color-accentTint: #edf1ff;
+  --color-accentHover: #1e40d8; /* primary button hover, under white text */
+  --color-accentText: #2e5bff; /* accent-colored text on a panel, e.g. "Loaded" */
 
   /* Borders */
   --color-border: #e3e6ea;
@@ -29,4 +38,40 @@
   --color-surface: #fafbfc; /* explanation box, console */
   --color-subtle: #f4f5f7; /* tab track */
   --color-track: #eef0f3; /* progress bar track */
+}
+
+/* Dark theme — set by src/store/settingsStore.ts on <html data-theme="dark">.
+   Same roles as above: panels sit one step above the page, borderStrong is
+   stronger than border, text > textMuted > textFaint, tints are the accent or
+   error color mixed into the panel color. The accent stays the same blue, so
+   white text on it and the code editor's current-line bar look as they do in
+   light mode; accentDark becomes lighter (the hover and text-on-tint color). */
+:root[data-theme='dark'] {
+  color-scheme: dark; /* native controls, e.g. the <select> dropdown and scrollbars */
+
+  --color-bg: #0f1115;
+  --color-panel: #171a1f;
+
+  --color-accent: #2e5bff;
+  --color-accentDark: #6886ff;
+  --color-accentTint: #18213f;
+  /* Hover goes darker, not lighter, so white text stays at 7.55:1 (a lighter blue that
+     keeps 4.5:1 is too close to the accent to read as a hover). */
+  --color-accentHover: #1e40d8;
+  /* The accent itself is only 3.37:1 on the dark panel; this is 5.35:1. */
+  --color-accentText: #6886ff;
+
+  --color-border: #2a2f37;
+  --color-borderStrong: #3b414b;
+
+  --color-text: #e7e9ec;
+  --color-textMuted: #a3abb8;
+  --color-textFaint: #6f7783;
+
+  --color-error: #f87171;
+  --color-errorTint: #2c1719;
+
+  --color-surface: #1d2127;
+  --color-subtle: #090b0e;
+  --color-track: #2a2f37;
 }

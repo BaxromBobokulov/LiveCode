@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import type { Variable } from '../../engine/types'
+import { useTranslation } from '../../i18n/useTranslation'
 
 type VariablesPanelProps = {
   variables: Variable[]
@@ -10,10 +11,11 @@ type VariablesPanelProps = {
 
 function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
   const reduceMotion = useReducedMotion()
+  const { t } = useTranslation()
 
   return (
     <div>
-      <h3 className="mb-1.75 text-label text-textMuted">Variables</h3>
+      <h3 className="mb-1.75 text-label text-textMuted">{t('panel.variables')}</h3>
       <div className="flex flex-wrap gap-2">
         {variables.map((variable) => {
           const isChanged = changed.includes(variable.name)
@@ -22,7 +24,7 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
             <div
               key={variable.name}
               className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 transition-colors duration-200 motion-reduce:transition-none ${
-                isChanged ? 'border-accent bg-accentTint' : 'border-border bg-white'
+                isChanged ? 'border-accent bg-accentTint' : 'border-border bg-panel'
               }`}
             >
               <div className="font-mono text-caption text-textMuted">{variable.name}</div>

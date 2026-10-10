@@ -1,4 +1,5 @@
 import type { LoopInfo } from '../../engine/types'
+import { useTranslation } from '../../i18n/useTranslation'
 
 type LoopTrackerProps = {
   loop: LoopInfo
@@ -7,14 +8,16 @@ type LoopTrackerProps = {
 }
 
 function LoopTracker({ loop, header }: LoopTrackerProps) {
+  const { t } = useTranslation()
+
   return (
     <div>
-      <h3 className="mb-1.75 text-label text-textMuted">Loop</h3>
+      <h3 className="mb-1.75 text-label text-textMuted">{t('panel.loop')}</h3>
       <div className="rounded-container border border-border px-3.5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <code className="font-mono text-body-sm text-text">{header.replace(/\s*\{$/, '')}</code>
           <span className="text-body-sm font-semibold text-text">
-            Iteration {loop.iteration} of {loop.total}
+            {t('loop.iterationOf', { current: loop.iteration, total: loop.total })}
           </span>
         </div>
         <div className="mt-2.5 flex gap-1" aria-hidden="true">

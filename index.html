@@ -12,6 +12,17 @@
       rel="stylesheet"
     />
     <title>LiveCode</title>
+    <!-- Apply the saved (or system) theme before the first paint, so a dark-mode
+         reload doesn't flash white. Same key and logic as src/store/settingsStore.ts. -->
+    <script>
+      try {
+        var theme = localStorage.getItem('codevision.theme')
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.dataset.theme = theme
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

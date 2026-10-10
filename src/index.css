@@ -6,7 +6,7 @@
 
 @layer base {
   body {
-    @apply bg-white font-sans text-body-md text-text antialiased;
+    @apply bg-bg font-sans text-body-md text-text antialiased;
   }
 
   h1 {

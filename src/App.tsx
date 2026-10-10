@@ -1,20 +1,24 @@
 import { MotionConfig } from 'framer-motion'
+import LanguageSwitcher from './components/LanguageSwitcher'
 import LogoMark from './components/LogoMark'
 import Tabs from './components/Tabs'
+import ThemeToggle from './components/ThemeToggle'
 import ExamplesScreen from './features/examples/ExamplesScreen'
 import LearnScreen from './features/learn/LearnScreen'
 import PlaygroundScreen from './features/playground/PlaygroundScreen'
+import { useTranslation } from './i18n/useTranslation'
 import { usePlaygroundStore, type TabId } from './store/playgroundStore'
-
-const tabs: { id: TabId; label: string }[] = [
-  { id: 'playground', label: 'Playground' },
-  { id: 'examples', label: 'Examples' },
-  { id: 'learn', label: 'Learn' },
-]
 
 function App() {
   const activeTab = usePlaygroundStore((state) => state.activeTab)
   const setTab = usePlaygroundStore((state) => state.setTab)
+  const { t } = useTranslation()
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'playground', label: t('nav.playground') },
+    { id: 'examples', label: t('nav.examples') },
+    { id: 'learn', label: t('nav.learn') },
+  ]
 
   return (
     // reducedMotion="user" skips Framer Motion animations when the OS asks for reduced motion
@@ -27,7 +31,13 @@ function App() {
             {/* </div> */}
             <span className="text-brand text-text">LiveCode</span>
           </div>
-          <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+            <div className="flex items-center gap-2">
+              <LanguageSwitcher />
+              <ThemeToggle />
+            </div>
+          </div>
         </header>
 
         <main className="py-6">
