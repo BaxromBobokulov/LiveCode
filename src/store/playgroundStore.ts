@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
+import type { RunError } from '../engine/errors'
+import { runUserCode } from '../engine/interpreter'
+import type { ExampleProgram } from '../engine/types'
 
 export type TabId = 'playground' | 'examples' | 'learn'
 
@@ -8,32 +11,58 @@ type PlaygroundState = {
   exampleId: string
   stepIndex: number
   isPlaying: boolean
+  /** Text in the code editor. Starts as the loaded example's code and changes as the user types. */
+  code: string
+  /** Trace of the user's own code from the last successful Run, or null while an example's trace is shown. */
+  userProgram: ExampleProgram | null
+  /** Why the last Run failed. The previous trace stays on screen. */
+  runError: RunError | null
 
   setTab: (tab: TabId) => void
   /** Load an example at its first step and switch to the Playground. */
   loadExample: (id: string) => void
+  setCode: (code: string) => void
   next: () => void
   prev: () => void
   /** Go back to the first step and stop auto play. */
   reset: () => void
-  /** Play the whole program from the first step. */
+  /** Trace the code in the editor and play it from the first step. */
   run: () => void
   toggleAutoplay: () => void
 }
 
+/** The program whose steps the Playground is showing. */
+function currentProgram(state: Pick<PlaygroundState, 'userProgram' | 'exampleId'>): ExampleProgram {
+  return state.userProgram ?? getExample(state.exampleId)
+}
+
 export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
-  const lastStepIndex = () => getExample(get().exampleId).steps.length - 1
+  const lastStepIndex = () => currentProgram(get()).steps.length - 1
 
   return {
     activeTab: 'playground',
     exampleId: examples[0].id,
     stepIndex: 0,
     isPlaying: false,
+    code: examples[0].code.join('\n'),
+    userProgram: null,
+    runError: null,
 
     // Leaving the Playground pauses auto play so it doesn't run unseen.
     setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
 
-    loadExample: (id) => set({ exampleId: id, stepIndex: 0, isPlaying: false, activeTab: 'playground' }),
+    loadExample: (id) =>
+      set({
+        exampleId: id,
+        code: getExample(id).code.join('\n'),
+        userProgram: null,
+        runError: null,
+        stepIndex: 0,
+        isPlaying: false,
+        activeTab: 'playground',
+      }),
+
+    setCode: (code) => set({ code }),
 
     next: () => {
       const nextIndex = Math.min(get().stepIndex + 1, lastStepIndex())
@@ -45,7 +74,29 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
 
     reset: () => set({ stepIndex: 0, isPlaying: false }),
 
-    run: () => set({ stepIndex: 0, isPlaying: true }),
+    run: () => {
+      const { code, exampleId } = get()
+      const example = getExample(exampleId)
+
+      // Unchanged example code plays its hand-authored trace.
+      if (code === example.code.join('\n')) {
+        set({ userProgram: null, runError: null, stepIndex: 0, isPlaying: true })
+        return
+      }
+
+      const result = runUserCode(code)
+      if ('error' in result) {
+        // Keep the previous trace, back on its first step, and show what went wrong.
+        set({ runError: result.error, stepIndex: 0, isPlaying: false })
+        return
+      }
+      set({
+        userProgram: { id: 'user', title: 'Your Code', tag: 'Custom', code: code.split('\n'), steps: result.steps },
+        runError: null,
+        stepIndex: 0,
+        isPlaying: true,
+      })
+    },
 
     toggleAutoplay: () => {
       const { isPlaying, stepIndex } = get()
@@ -61,7 +112,9 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
   }
 })
 
-/** The example currently loaded in the Playground. */
+/** The program loaded in the Playground: an example, or the user's own code after Run. */
 export function useCurrentExample() {
-  return getExample(usePlaygroundStore((state) => state.exampleId))
+  const userProgram = usePlaygroundStore((state) => state.userProgram)
+  const exampleId = usePlaygroundStore((state) => state.exampleId)
+  return currentProgram({ userProgram, exampleId })
 }

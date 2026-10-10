@@ -1,56 +1,96 @@
 import { motion, useReducedMotion } from 'framer-motion'
 
-// Right eye "<" open, and the same three points flattened into a line (closed).
-// Both paths share one structure so Framer Motion can morph between them.
-const eyeOpen = 'M20.5 12 14.5 16 20.5 20'
-const eyeClosed = 'M20.5 16 14.5 16 20.5 16'
+// Chap ko'zni 1-2px chapga suramiz (masalan: 6 -> 5, 11 -> 10)
+const leftEyeOpen = 'M5 13 L10 16.5 L5 20'
+const leftEyeClosed = 'M5 16.5 L10 16.5 L5 16.5'
 
-// One 4s cycle: open, quick close (~80ms), hold closed (~160ms), reopen (~80ms).
-const winkTransition = {
+// O'ng ko'zni 1-2px o'ngga suramiz (masalan: 19 -> 20, 14 -> 15)
+const rightEyeOpen = 'M20 13 L15 16.5 L20 20'
+const rightEyeClosed = 'M20 16.5 L15 16.5 L20 16.5'
+
+// Ko'z yumilishi (blink) sikli
+const blinkTransition = {
   duration: 4,
-  times: [0, 0.9, 0.92, 0.96, 0.98, 1],
+  times: [0, 0.42, 0.44, 0.46, 1],
   ease: 'easeInOut' as const,
   repeat: Infinity,
 }
 
-// Terminal-window face: window frame with three control dots, ">" "<" eyes and a mouth.
-// The right eye winks every ~4s; it stays open when the user prefers reduced motion.
-function LogoMark({ className }: { className?: string }) {
+// Yuzning o'ngga va chapga qarashi
+const lookTransition = {
+  duration: 4,
+  times: [0, 0.2, 0.36, 0.5, 0.65, 0.8, 1],
+  ease: 'easeInOut' as const,
+  repeat: Infinity,
+}
+
+// Butun korpusning yengil tebranishi
+const bobTransition = {
+  duration: 3,
+  ease: 'easeInOut' as const,
+  repeat: Infinity,
+}
+
+export default function TerminalLogo({ className }: { className?: string }) {
   const reduceMotion = useReducedMotion()
 
   return (
-    <svg
+    <motion.svg
       aria-hidden="true"
       viewBox="0 0 36 36"
       className={className}
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
+      animate={reduceMotion ? undefined : { y: [0, -1, 0], rotate: [0, 1.2, 0] }}
+      transition={bobTransition}
     >
-      <rect x="2" y="3.4" width="30" height="27.2" rx="4.2" />
+      {/* Terminal ramkasi */}
+      <rect x="2.5" y="2.5" width="32" height="32" rx="6.5" strokeWidth="2.8" />
+
+      {/* Yuqori 3 ta nuqta */}
       <g fill="currentColor" stroke="none">
-        <circle cx="4.9" cy="6" r="0.8" />
-        <circle cx="7.1" cy="6" r="0.8" />
-        <circle cx="9.3" cy="6" r="0.8" />
+        <circle cx="6.5" cy="7.5" r="1.1" />
+        <circle cx="9.8" cy="7.5" r="1.1" />
+        <circle cx="13.1" cy="7.5" r="1.1" />
       </g>
-      {/* Face: larger and heavier than the frame so it reads clearly at 32px */}
-      <g strokeWidth="2.5">
-        <path d="M5 12 11 16 5 20" />
+
+      {/* Yuz (ko'zlar va og'iz birgalikda o'ngga/chapga buriladi) */}
+      <motion.g
+        strokeWidth="2.4"
+        animate={reduceMotion ? undefined : { x: [0, 0, 3.5, 3.5, -1.8, -1.8, 0] }}
+        transition={lookTransition}
+      >
+        {/* Chap ko'z ">" */}
         {reduceMotion ? (
-          <path d={eyeOpen} />
+          <path d={leftEyeOpen} />
         ) : (
           <motion.path
-            d={eyeOpen}
-            animate={{ d: [eyeOpen, eyeOpen, eyeClosed, eyeClosed, eyeOpen, eyeOpen] }}
-            transition={winkTransition}
+            d={leftEyeOpen}
+            animate={{
+              d: [leftEyeOpen, leftEyeOpen, leftEyeClosed, leftEyeOpen, leftEyeOpen],
+            }}
+            transition={blinkTransition}
           />
         )}
-        <path d="M10.25 23.5h5" />
-      </g>
-    </svg>
+
+        {/* O'ng ko'z "<" */}
+        {reduceMotion ? (
+          <path d={rightEyeOpen} />
+        ) : (
+          <motion.path
+            d={rightEyeOpen}
+            animate={{
+              d: [rightEyeOpen, rightEyeOpen, rightEyeClosed, rightEyeOpen, rightEyeOpen],
+            }}
+            transition={blinkTransition}
+          />
+        )}
+
+        {/* Og'iz "_" */}
+        <path d="M10.5 24.5 h6" />
+      </motion.g>
+    </motion.svg>
   )
 }
-
-export default LogoMark

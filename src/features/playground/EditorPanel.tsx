@@ -1,11 +1,12 @@
-import { cpp } from '@codemirror/lang-cpp'
-import CodeMirror, { lineNumbers } from '@uiw/react-codemirror'
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
+import { defaultKeymap } from '@codemirror/commands'
+import CodeMirror, { keymap, lineNumbers } from '@uiw/react-codemirror'
 import { useMemo } from 'react'
 import Button from '../../components/Button'
 import Chip from '../../components/Chip'
 import Select from '../../components/Select'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
-import { codeMirrorTheme, execLineHighlight } from './codeMirrorTheme'
+import { cLanguage, codeMirrorTheme, execLineHighlight } from './codeMirrorTheme'
 
 // Only C is supported in this version; the others are shown as coming later.
 const languages = [
@@ -20,10 +21,23 @@ function EditorPanel() {
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const reset = usePlaygroundStore((state) => state.reset)
   const run = usePlaygroundStore((state) => state.run)
+  const code = usePlaygroundStore((state) => state.code)
+  const setCode = usePlaygroundStore((state) => state.setCode)
 
   const step = example.steps[stepIndex]
-  const code = useMemo(() => example.code.join('\n'), [example])
-  const extensions = useMemo(() => [lineNumbers(), cpp(), execLineHighlight(step.line)], [step.line])
+  // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) is added here explicitly.
+  // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,
+  // the same order CodeMirror's own basicSetup uses.
+  const extensions = useMemo(
+    () => [
+      lineNumbers(),
+      closeBrackets(),
+      keymap.of([...closeBracketsKeymap, ...defaultKeymap]),
+      cLanguage,
+      execLineHighlight(step.line),
+    ],
+    [step.line],
+  )
 
   return (
     <section className="min-w-0 flex-1 overflow-hidden rounded-panel border border-border bg-white">
@@ -41,12 +55,12 @@ function EditorPanel() {
         </div>
       </header>
 
-      {/* Read-only: the steps are pre-traced for this exact code. */}
+      {/* Editable: Run traces whatever is typed here. */}
       <CodeMirror
         value={code}
+        onChange={setCode}
         theme={codeMirrorTheme}
         basicSetup={false}
-        editable={false}
         extensions={extensions}
       />
     </section>

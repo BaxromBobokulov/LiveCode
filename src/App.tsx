@@ -21,10 +21,10 @@ function App() {
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen px-4 sm:px-7">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border pt-6 pb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-container bg-accent text-white">
+          <div className="flex items-center gap-1.5">
+            {/* <div className="flex size-8 items-center justify-center rounded-container bg-accent text-white"> */}
               <LogoMark className="size-6" />
-            </div>
+            {/* </div> */}
             <span className="text-brand text-text">LiveCode</span>
           </div>
           <Tabs tabs={tabs} value={activeTab} onChange={setTab} />

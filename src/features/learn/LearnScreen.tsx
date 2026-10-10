@@ -6,20 +6,23 @@ function LearnScreen() {
       </header>
       <div className="flex flex-col gap-3 p-4.5 text-body-md text-text">
         <p>
-          CodeVision runs a short C program one step at a time. Each step is one line: the editor
-          highlights the line that just ran, and the Execution panel explains what it did in plain
+          CodeVision runs a short C program one step at a time. Start from one of the Examples, or
+          type or paste your own program into the Playground editor and press Run. Each step is one
+          line: the editor highlights it and the Execution panel explains what it did in plain
           language.
         </p>
         <p>
           Variables that changed on the current step are outlined in blue. When a program walks
           through an array, the array view marks the element in use and the loop tracker counts
-          iterations. Anything the program prints with <code className="font-mono">printf</code>{' '}
-          appears in the console.
+          iterations. Anything printed with <code className="font-mono">printf</code> appears in
+          the console. Use Next and Previous to go at your own pace, or Auto Play to step
+          automatically.
         </p>
         <p>
-          Use Next and Previous to go at your own pace, Auto Play to step automatically, or Run to
-          watch the whole program from the start. Pick another program in the Examples tab. The
-          examples are traced in advance, so the code can&apos;t be edited yet.
+          CodeVision understands a small part of C: int and float variables, one-dimensional
+          arrays, if / else, for and while loops, functions and{' '}
+          <code className="font-mono">printf</code>. If your program uses something outside that,
+          Run shows a message naming the line and what isn't supported yet.
         </p>
       </div>
     </section>

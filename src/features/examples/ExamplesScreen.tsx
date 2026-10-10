@@ -1,6 +1,11 @@
+import CodeMirror from '@uiw/react-codemirror'
 import Chip from '../../components/Chip'
 import { examples } from '../../data/examples'
 import { usePlaygroundStore } from '../../store/playgroundStore'
+import { cLanguage, codeMirrorTheme, codePreview } from '../playground/codeMirrorTheme'
+
+const previewExtensions = [cLanguage, codePreview]
+const previewLineCount = 4
 
 function ExamplesScreen() {
   const exampleId = usePlaygroundStore((state) => state.exampleId)
@@ -10,11 +15,13 @@ function ExamplesScreen() {
     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {examples.map((example) => {
         const isLoaded = example.id === exampleId
-        // Preview the body of main(): skip the #include/main() lines and the closing brace.
+        // Preview the first lines of main()'s body: every example starts with the same
+        // #include / blank / main() lines, so those would make all three cards look alike.
         const preview = example.code
-          .slice(3, -1)
+          .slice(3, 3 + previewLineCount)
           .map((line) => line.replace(/^ {4}/, ''))
           .join('\n')
+          .trimEnd()
 
         return (
           <button
@@ -29,9 +36,15 @@ function ExamplesScreen() {
               <span className="text-body-md font-semibold text-text">{example.title}</span>
               <Chip>{example.tag}</Chip>
             </div>
-            <pre className="w-full flex-1 overflow-hidden px-4.5 py-3 font-mono text-code text-textMuted">
-              {preview}
-            </pre>
+            {/* Same dark surface and syntax colors as the Playground editor. */}
+            <CodeMirror
+              value={preview}
+              theme={codeMirrorTheme}
+              basicSetup={false}
+              editable={false}
+              extensions={previewExtensions}
+              className="w-full flex-1"
+            />
             <div className="w-full border-t border-border px-4.5 py-3 text-body-sm text-textMuted">
               {example.code.length} lines · {example.steps.length} steps
               {isLoaded && <span className="font-semibold text-accent"> · Loaded</span>}
