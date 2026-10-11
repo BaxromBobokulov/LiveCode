@@ -2,6 +2,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import Chip from '../../components/Chip'
 import { examples } from '../../data/examples'
 import { useTranslation } from '../../i18n/useTranslation'
+import { track } from '../../lib/analytics'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { cLanguage, codeMirrorTheme, codePreview } from '../playground/codeMirrorTheme'
 
@@ -29,7 +30,10 @@ function ExamplesScreen() {
           <button
             key={example.id}
             type="button"
-            onClick={() => loadExample(example.id)}
+            onClick={() => {
+              loadExample(example.id)
+              track('example_opened', { exampleName: example.title })
+            }}
             className={`flex flex-col overflow-hidden rounded-panel border bg-panel text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
               isLoaded ? 'border-accent' : 'border-border hover:border-borderStrong'
             }`}

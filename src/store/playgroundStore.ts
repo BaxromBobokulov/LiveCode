@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
-import type { RunError } from '../engine/errors'
+import { UnsupportedConstructError, type RunError } from '../engine/errors'
 import { runUserCode } from '../engine/interpreter'
+import { track } from '../lib/analytics'
 import type { ExampleProgram } from '../engine/types'
 
 export type TabId = 'playground' | 'examples' | 'learn'
@@ -80,12 +81,17 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
 
       // Unchanged example code plays its hand-authored trace.
       if (code === example.code.join('\n')) {
+        track('code_run', { source: 'example' })
         set({ userProgram: null, runError: null, stepIndex: 0, isPlaying: true })
         return
       }
 
+      track('code_run', { source: 'custom' })
       const result = runUserCode(code)
       if ('error' in result) {
+        track('code_run_error', {
+          errorType: result.error instanceof UnsupportedConstructError ? 'UnsupportedConstructError' : 'CodeError',
+        })
         // Keep the previous trace, back on its first step, and show what went wrong.
         set({ runError: result.error, stepIndex: 0, isPlaying: false })
         return

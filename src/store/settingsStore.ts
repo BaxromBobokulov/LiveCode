@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { track } from '../lib/analytics'
 
 export type Theme = 'light' | 'dark'
 export type Locale = 'en' | 'uz' | 'ru'
@@ -73,12 +74,14 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
       applyTheme(next)
       save(THEME_KEY, next)
       set({ theme: next })
+      track('theme_changed', { theme: next })
     },
 
     setLocale: (next) => {
       applyLocale(next)
       save(LOCALE_KEY, next)
       set({ locale: next })
+      track('language_changed', { language: next })
     },
   }
 })
