@@ -1,4 +1,4 @@
-import { CodeError, UnsupportedConstructError } from './errors'
+import { CodeError, UnsupportedConstructError, code } from './errors'
 
 export type TokenKind = 'number' | 'string' | 'char' | 'identifier' | 'keyword' | 'punct' | 'eof'
 
@@ -56,7 +56,7 @@ export function tokenize(source: string): Token[] {
     }
     if (source.startsWith('/*', pos)) {
       const end = source.indexOf('*/', pos + 2)
-      if (end === -1) throw new CodeError(line, 'This comment is never closed. Add */ to end it.')
+      if (end === -1) throw new CodeError(line, 'codeError.unclosedComment')
       for (const c of source.slice(pos, end)) if (c === '\n') line++
       pos = end + 2
       continue
@@ -71,10 +71,8 @@ export function tokenize(source: string): Token[] {
         const isInclude = /^#\s*include/.test(directive)
         throw new UnsupportedConstructError(
           line,
-          isInclude ? directive : directive.split(/\s+/)[0],
-          isInclude
-            ? 'Only #include <stdio.h> is supported. Other libraries are not available yet.'
-            : 'Preprocessor directives like #define are not supported yet.',
+          code(isInclude ? directive : directive.split(/\s+/)[0]),
+          { key: isInclude ? 'unsupported.include' : 'unsupported.directive' },
         )
       }
       pos = end
@@ -88,7 +86,7 @@ export function tokenize(source: string): Token[] {
       const match = /^(\d*\.?\d*(?:[eE][+-]?\d+)?)[fF]?/.exec(source.slice(pos))
       const text = match ? match[0] : char
       if (/[A-Za-z_0-9]/.test(source[pos + text.length] ?? '')) {
-        throw new CodeError(line, 'This number is not written correctly. Only plain decimal numbers are supported.')
+        throw new CodeError(line, 'codeError.badNumber')
       }
       tokens.push({ kind: 'number', text, line })
       pos += text.length
@@ -116,7 +114,7 @@ export function tokenize(source: string): Token[] {
     }
 
     const punct = punctuators.find((p) => source.startsWith(p, pos))
-    if (!punct) throw new CodeError(line, `Unexpected character "${char}".`)
+    if (!punct) throw new CodeError(line, 'codeError.unexpectedChar', { char })
     tokens.push({ kind: 'punct', text: punct, line })
     pos += punct.length
   }
@@ -135,10 +133,11 @@ export function tokenize(source: string): Token[] {
         if (escape === 'n') text += '\n'
         else if (escape === '"' || escape === '\\') text += escape
         else {
+          const values = { escape: `\\${escape ?? ''}` }
           throw new UnsupportedConstructError(
             line,
-            `\\${escape ?? ''} escape`,
-            `The escape \\${escape ?? ''} is not supported yet. Only \\n works in strings.`,
+            { key: 'construct.escape', values },
+            { key: 'unsupported.escape', values },
           )
         }
         pos += 2
@@ -147,7 +146,7 @@ export function tokenize(source: string): Token[] {
       text += source[pos]
       pos++
     }
-    if (source[pos] !== '"') throw new CodeError(line, 'This string is never closed. Add a " to end it.')
+    if (source[pos] !== '"') throw new CodeError(line, 'codeError.unclosedString')
     pos++ // closing quote
     return text
   }

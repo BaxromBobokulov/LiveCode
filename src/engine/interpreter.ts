@@ -1,4 +1,4 @@
-import { CodeError, UnsupportedConstructError, type RunError } from './errors'
+import { CodeError, UnsupportedConstructError, code, type ErrorText, type RunError } from './errors'
 import { explain, type Shown, type StepFact } from './explain'
 import {
   formatNumber,
@@ -67,7 +67,7 @@ export function runUserCode(source: string): { steps: Step[] } | { error: RunErr
     return { steps: execute(parse(source)) }
   } catch (error) {
     if (error instanceof UnsupportedConstructError || error instanceof CodeError) return { error }
-    return { error: new CodeError(1, 'Something went wrong while running this code.') }
+    return { error: new CodeError(1, 'codeError.internal') }
   }
 }
 
@@ -109,11 +109,11 @@ function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: num
     case '-': return convert(a - b, type)
     case '*': return type === 'int' ? Math.imul(a, b) : Math.fround(a * b)
     case '/':
-      if (b === 0) throw new CodeError(line, 'Division by zero. A number cannot be divided by 0.')
+      if (b === 0) throw new CodeError(line, 'codeError.divisionByZero')
       return convert(a / b, type) // int division drops the fraction, like C
     case '%':
-      if (type === 'float') throw new CodeError(line, 'The % operator only works with int values.')
-      if (b === 0) throw new CodeError(line, 'Division by zero. % by 0 is not allowed.')
+      if (type === 'float') throw new CodeError(line, 'codeError.modFloat')
+      if (b === 0) throw new CodeError(line, 'codeError.modByZero')
       return a % b
   }
 }
@@ -144,7 +144,7 @@ export function execute(program: Program): Step[] {
 
   function emit(line: number, fact: StepFact, changed: string[] = []) {
     if (steps.length >= MAX_STEPS) {
-      throw new CodeError(line, `The program was stopped after ${MAX_STEPS} steps. Check for a loop that never ends.`)
+      throw new CodeError(line, 'codeError.stepLimit', { max: MAX_STEPS })
     }
     const current = frame()
 
@@ -202,7 +202,7 @@ export function execute(program: Program): Step[] {
     if (!returned) {
       const caller = callerName()
       if (fn.returnType !== 'void' && caller !== null) {
-        throw new CodeError(fn.endLine, `${fn.name} reaches its end without returning a value. Add a return statement.`)
+        throw new CodeError(fn.endLine, 'codeError.missingReturn', { name: fn.name })
       }
       emit(fn.endLine, { kind: 'end', name: fn.name, caller })
     }
@@ -218,21 +218,25 @@ export function execute(program: Program): Step[] {
       if (libraryFunctions.has(expr.name)) {
         throw new UnsupportedConstructError(
           expr.line,
-          `${expr.name}()`,
-          `${expr.name}() is not supported yet. The only library function available is printf.`,
+          code(`${expr.name}()`),
+          { key: 'unsupported.libraryFunction', values: { name: expr.name } },
         )
       }
-      throw new CodeError(expr.line, `There is no function named ${expr.name}.`)
+      throw new CodeError(expr.line, 'codeError.noFunction', { name: expr.name })
     }
     if (frames.some((f) => f.fn === fn)) {
       throw new UnsupportedConstructError(
         expr.line,
-        'recursion',
-        `${fn.name} is called again while it is still running (recursion). Recursion is not supported yet. Use a loop instead.`,
+        { key: 'construct.recursion' },
+        { key: 'unsupported.recursion', values: { name: fn.name } },
       )
     }
     if (expr.args.length !== fn.params.length) {
-      throw new CodeError(expr.line, `${fn.name} takes ${fn.params.length} argument(s), but ${expr.args.length} were given.`)
+      throw new CodeError(expr.line, 'codeError.argCount', {
+        name: fn.name,
+        expected: fn.params.length,
+        given: expr.args.length,
+      })
     }
 
     const params = new Map<string, Slot>()
@@ -245,21 +249,26 @@ export function execute(program: Program): Step[] {
         const slot = arg.kind === 'var' ? lookup(arg.name, arg.line) : null
         const isGridParam = param.columns !== null
         if (!slot || slot.kind !== (isGridParam ? 'grid' : 'array') || arg.kind !== 'var') {
-          throw new CodeError(
-            expr.line,
-            isGridParam
-              ? `${fn.name} expects a 2D array for ${param.name}. Pass the array's name, e.g. ${fn.name}(grid, ...).`
-              : `${fn.name} expects an array for ${param.name}. Pass the array's name, e.g. ${fn.name}(arr, ...).`,
-          )
+          throw new CodeError(expr.line, isGridParam ? 'codeError.expectsGrid' : 'codeError.expectsArray', {
+            fn: fn.name,
+            param: param.name,
+          })
         }
         if (slot.kind === 'grid' && slot.values[0].length !== param.columns) {
-          throw new CodeError(
-            expr.line,
-            `${param.name} has ${param.columns} columns, but ${arg.name} has ${slot.values[0].length}. They must match.`,
-          )
+          throw new CodeError(expr.line, 'codeError.columnsMismatch', {
+            param: param.name,
+            expected: String(param.columns),
+            arg: arg.name,
+            actual: slot.values[0].length,
+          })
         }
         if (slot.type !== param.type) {
-          throw new CodeError(expr.line, `${param.name} is a ${param.type} array, but ${arg.name} is a ${slot.type} array.`)
+          throw new CodeError(expr.line, 'codeError.arrayTypeMismatch', {
+            param: param.name,
+            paramType: param.type,
+            arg: arg.name,
+            argType: slot.type,
+          })
         }
         params.set(param.name, slot)
         args.push(arg.name)
@@ -294,15 +303,15 @@ export function execute(program: Program): Step[] {
       const slot = scopes[i].get(name)
       if (slot) return slot
     }
-    if (program.functions.has(name)) throw new CodeError(line, `${name} is a function. Call it with ${name}(...).`)
-    throw new CodeError(line, `${name} is not declared. Declare it first, e.g. int ${name} = 0;`)
+    if (program.functions.has(name)) throw new CodeError(line, 'codeError.isFunction', { name })
+    throw new CodeError(line, 'codeError.notDeclared', { name })
   }
 
   function readScalar(name: string, line: number): Value {
     const slot = lookup(name, line)
-    if (slot.kind === 'array') throw new CodeError(line, `${name} is an array. Use one element, e.g. ${name}[0].`)
-    if (slot.kind === 'grid') throw new CodeError(line, `${name} is a 2D array. Use one cell, e.g. ${name}[0][0].`)
-    if (slot.value === null) throw new CodeError(line, `${name} is used before it has a value. Give it a value first.`)
+    if (slot.kind === 'array') throw new CodeError(line, 'codeError.isArray', { name })
+    if (slot.kind === 'grid') throw new CodeError(line, 'codeError.isGrid', { name })
+    if (slot.value === null) throw new CodeError(line, 'codeError.noValue', { name })
     return { type: slot.type, value: slot.value, work: formatNumber(slot.value, slot.type) }
   }
 
@@ -310,16 +319,14 @@ export function execute(program: Program): Step[] {
   function elementOf(expr: Extract<Expr, { kind: 'index' }>): { store: ArrayStore; index: number } {
     const store = lookup(expr.name, expr.line)
     if (store.kind === 'grid') {
-      throw new CodeError(expr.line, `${expr.name} is a 2D array, so it needs two indexes, e.g. ${expr.name}[0][0].`)
+      throw new CodeError(expr.line, 'codeError.gridNeedsTwo', { name: expr.name })
     }
-    if (store.kind !== 'array') throw new CodeError(expr.line, `${expr.name} is not an array, so ${expr.name}[...] can't be used.`)
+    if (store.kind !== 'array') throw new CodeError(expr.line, 'codeError.notArray', { name: expr.name })
     const size = store.values.length
-    const index = evaluateIndex(
-      expr.index,
-      size,
-      expr.line,
-      (i) => `${expr.name}[${i}] is outside the array. ${expr.name} has ${size} elements, so valid indexes are 0 to ${size - 1}.`,
-    )
+    const index = evaluateIndex(expr.index, size, expr.line, (i) => ({
+      key: 'codeError.indexOutside',
+      values: { name: expr.name, index: i, size, last: size - 1 },
+    }))
     access = { name: expr.name, store, active: index }
     return { store, index }
   }
@@ -328,33 +335,36 @@ export function execute(program: Program): Step[] {
   function cellOf(expr: Extract<Expr, { kind: 'cell' }>): { store: GridStore; row: number; col: number } {
     const store = lookup(expr.name, expr.line)
     if (store.kind === 'array') {
-      throw new CodeError(expr.line, `${expr.name} is a 1D array, so it takes one index, e.g. ${expr.name}[0].`)
+      throw new CodeError(expr.line, 'codeError.arrayNeedsOne', { name: expr.name })
     }
-    if (store.kind !== 'grid') throw new CodeError(expr.line, `${expr.name} is not an array, so ${expr.name}[...][...] can't be used.`)
+    if (store.kind !== 'grid') throw new CodeError(expr.line, 'codeError.notGrid', { name: expr.name })
     const rows = store.values.length
     const cols = store.values[0].length
-    const row = evaluateIndex(
-      expr.row,
-      rows,
-      expr.line,
-      (r) => `${expr.name}[${r}][...] is outside the array. ${expr.name} has ${rows} rows, so valid row indexes are 0 to ${rows - 1}.`,
-    )
-    const col = evaluateIndex(
-      expr.col,
-      cols,
-      expr.line,
-      (c) =>
-        `${expr.name}[${row}][${c}] is outside the array. Each row of ${expr.name} has ${cols} columns, so valid column indexes are 0 to ${cols - 1}.`,
-    )
+    const row = evaluateIndex(expr.row, rows, expr.line, (r) => ({
+      key: 'codeError.rowOutside',
+      values: { name: expr.name, row: r, rows, last: rows - 1 },
+    }))
+    const col = evaluateIndex(expr.col, cols, expr.line, (c) => ({
+      key: 'codeError.colOutside',
+      values: { name: expr.name, row, col: c, cols, last: cols - 1 },
+    }))
     access = { name: expr.name, store, active: { row, col } }
     return { store, row, col }
   }
 
   /** Works out an array index and checks it is an int from 0 to size - 1. */
-  function evaluateIndex(index: Expr, size: number, line: number, outsideMessage: (value: number) => string): number {
+  function evaluateIndex(
+    index: Expr,
+    size: number,
+    line: number,
+    outsideMessage: (value: number) => Required<ErrorText>,
+  ): number {
     const value = evaluate(index)
-    if (value.type !== 'int') throw new CodeError(line, `An array index must be an int, but ${toSource(index)} is a float.`)
-    if (value.value < 0 || value.value >= size) throw new CodeError(line, outsideMessage(value.value))
+    if (value.type !== 'int') throw new CodeError(line, 'codeError.indexFloat', { index: toSource(index) })
+    if (value.value < 0 || value.value >= size) {
+      const { key, values } = outsideMessage(value.value)
+      throw new CodeError(line, key, values)
+    }
     return value.value
   }
 
@@ -364,7 +374,7 @@ export function execute(program: Program): Step[] {
       const slot = lookup(target.name, target.line)
       if (slot.kind !== 'scalar') {
         const example = slot.kind === 'grid' ? `${target.name}[0][0] = 1;` : `${target.name}[0] = 1;`
-        throw new CodeError(target.line, `${target.name} is an array. Assign to one element instead, e.g. ${example}`)
+        throw new CodeError(target.line, 'codeError.assignArray', { name: target.name, example })
       }
       return {
         label: target.name,
@@ -393,17 +403,19 @@ export function execute(program: Program): Step[] {
 
   function declare(type: NumType, d: Declarator): Effect {
     const scope = frame().scopes[frame().scopes.length - 1]
-    if (scope.has(d.name)) throw new CodeError(d.line, `${d.name} is already declared here.`)
+    if (scope.has(d.name)) throw new CodeError(d.line, 'codeError.alreadyDeclared', { name: d.name })
 
     if (d.isArray && d.columns) return declareGrid(type, d, d.columns, scope)
 
     if (d.isArray) {
       const size = d.size ? evaluateSize(d.size, d) : (d.arrayInit?.length ?? 0)
       if (size > MAX_ARRAY_SIZE) {
-        throw new CodeError(d.line, `${d.name} is too big to show. Arrays can have at most ${MAX_ARRAY_SIZE} elements.`)
+        throw new CodeError(d.line, 'codeError.arrayTooBig', { name: d.name, max: MAX_ARRAY_SIZE })
       }
       const init = d.arrayInit ?? []
-      if (init.length > size) throw new CodeError(d.line, `${d.name} has room for ${size} values, but ${init.length} were given.`)
+      if (init.length > size) {
+        throw new CodeError(d.line, 'codeError.tooManyValues', { name: d.name, size, given: init.length })
+      }
 
       // C fills the rest of a partly-initialised array with 0.
       const values = new Array<number>(size).fill(0)
@@ -429,12 +441,12 @@ export function execute(program: Program): Step[] {
     const init = d.gridInit ?? []
     const rows = d.size ? evaluateSize(d.size, d) : init.length
     if (rows * cols > MAX_ARRAY_SIZE) {
-      throw new CodeError(d.line, `${d.name} is too big to show. Arrays can have at most ${MAX_ARRAY_SIZE} elements in total.`)
+      throw new CodeError(d.line, 'codeError.gridTooBig', { name: d.name, max: MAX_ARRAY_SIZE })
     }
-    if (init.length > rows) throw new CodeError(d.line, `${d.name} has room for ${rows} rows, but ${init.length} were given.`)
+    if (init.length > rows) throw new CodeError(d.line, 'codeError.tooManyRows', { name: d.name, rows, given: init.length })
     init.forEach((row, r) => {
       if (row.length > cols) {
-        throw new CodeError(d.line, `Row ${r} of ${d.name} has room for ${cols} values, but ${row.length} were given.`)
+        throw new CodeError(d.line, 'codeError.rowTooManyValues', { row: r, name: d.name, cols, given: row.length })
       }
     })
 
@@ -450,7 +462,7 @@ export function execute(program: Program): Step[] {
   function evaluateSize(expr: Expr, d: Declarator): number {
     const value = evaluate(expr)
     if (value.type !== 'int' || value.value <= 0) {
-      throw new CodeError(d.line, `The size of ${d.name} must be a whole number above 0.`)
+      throw new CodeError(d.line, 'codeError.badSize', { name: d.name })
     }
     return value.value
   }
@@ -508,7 +520,7 @@ export function execute(program: Program): Step[] {
       case 'call': {
         const result = evaluateCall(expr)
         if (!result) {
-          throw new CodeError(expr.line, `${expr.name} is void, so it doesn't give back a value that can be used here.`)
+          throw new CodeError(expr.line, 'codeError.voidValue', { name: expr.name })
         }
         return result
       }
@@ -568,7 +580,7 @@ export function execute(program: Program): Step[] {
       return { facts: effects.flatMap((e) => e.facts), changed: effects.flatMap((e) => e.changed) }
     }
     if (stmt.kind === 'assign' || stmt.kind === 'update' || stmt.kind === 'expr') return runSimple(stmt)
-    throw new CodeError(stmt.line, 'This kind of statement cannot go inside a for (...) header.')
+    throw new CodeError(stmt.line, 'codeError.forHeader')
   }
 
   function runStatements(body: Stmt[]): Returned | null {
@@ -612,10 +624,10 @@ export function execute(program: Program): Step[] {
           if (arg.kind === 'text') return arg.value
           const value = evaluate(arg)
           if (placeholder === '%d' && value.type !== 'int') {
-            throw new CodeError(stmt.line, `%d prints an int, but ${toSource(arg)} is a float. Use %f instead.`)
+            throw new CodeError(stmt.line, 'codeError.printfIntGotFloat', { arg: toSource(arg) })
           }
           if (placeholder === '%f' && value.type !== 'float') {
-            throw new CodeError(stmt.line, `%f prints a float, but ${toSource(arg)} is an int. Use %d instead.`)
+            throw new CodeError(stmt.line, 'codeError.printfFloatGotInt', { arg: toSource(arg) })
           }
           return placeholder === '%d' ? String(value.value) : value.value.toFixed(6)
         })
@@ -655,8 +667,10 @@ export function execute(program: Program): Step[] {
 
       case 'return': {
         const fn = frame().fn
-        if (stmt.value && fn.returnType === 'void') throw new CodeError(stmt.line, `${fn.name} is void, so it can't return a value.`)
-        if (!stmt.value && fn.returnType !== 'void') throw new CodeError(stmt.line, `${fn.name} must return a ${fn.returnType} value.`)
+        if (stmt.value && fn.returnType === 'void') throw new CodeError(stmt.line, 'codeError.voidReturn', { name: fn.name })
+        if (!stmt.value && fn.returnType !== 'void') {
+          throw new CodeError(stmt.line, 'codeError.mustReturn', { name: fn.name, type: fn.returnType })
+        }
 
         if (!stmt.value || fn.returnType === 'void') {
           emit(stmt.line, { kind: 'return', name: fn.name, value: null, caller: callerName() })

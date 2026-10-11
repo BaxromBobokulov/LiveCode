@@ -18,11 +18,11 @@ const languages = [
   { value: 'java', label: 'Java', disabled: true },
 ]
 
-function EditorPanel() {
+/** `onRun` is called when the Run button is pressed. */
+function EditorPanel({ onRun }: { onRun: () => void }) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const reset = usePlaygroundStore((state) => state.reset)
-  const run = usePlaygroundStore((state) => state.run)
   const code = usePlaygroundStore((state) => state.code)
   const setCode = usePlaygroundStore((state) => state.setCode)
   const { t, exampleText } = useTranslation()
@@ -58,7 +58,7 @@ function EditorPanel() {
           <Button variant="secondary" onClick={reset}>
             {t('button.reset')}
           </Button>
-          <Button onClick={run}>{t('button.run')}</Button>
+          <Button onClick={onRun}>{t('button.run')}</Button>
         </div>
       </header>
 

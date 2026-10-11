@@ -1,4 +1,4 @@
-import { CodeError, UnsupportedConstructError } from './errors'
+import { CodeError, UnsupportedConstructError, code, type ErrorText } from './errors'
 import { tokenize, type Token } from './lexer'
 
 // ---------------------------------------------------------------------------
@@ -129,43 +129,53 @@ export function formatNumber(value: number, type: NumType): string {
 // Unsupported constructs
 // ---------------------------------------------------------------------------
 
-const unsupportedKeywords: Record<string, [construct: string, message: string]> = {
-  char: ['char', 'The char type (characters and strings) is not supported yet. Use int or float.'],
-  double: ['double', 'The double type is not supported yet. Use float instead.'],
-  long: ['long', 'Only the int and float types are supported.'],
-  short: ['short', 'Only the int and float types are supported.'],
-  unsigned: ['unsigned', 'Only the int and float types are supported.'],
-  signed: ['signed', 'Only the int and float types are supported.'],
-  struct: ['struct', 'Structs are not supported yet.'],
-  union: ['union', 'Unions are not supported yet.'],
-  enum: ['enum', 'Enums are not supported yet.'],
-  typedef: ['typedef', 'typedef is not supported yet.'],
-  do: ['do-while loop', 'do-while loops are not supported yet. Use a while loop instead.'],
-  switch: ['switch statement', 'switch statements are not supported yet. Use if / else if instead.'],
-  case: ['switch statement', 'switch statements are not supported yet. Use if / else if instead.'],
-  default: ['switch statement', 'switch statements are not supported yet. Use if / else if instead.'],
-  break: ['break', 'break is not supported yet. End the loop through its condition instead.'],
-  continue: ['continue', 'continue is not supported yet.'],
-  goto: ['goto', 'goto is not supported.'],
-  sizeof: ['sizeof', 'sizeof is not supported yet.'],
-  const: ['const', 'Qualifiers like const are not supported yet. Remove it.'],
-  static: ['static', 'Qualifiers like static are not supported yet. Remove it.'],
-  extern: ['extern', 'extern is not supported. Everything must be in this one file.'],
-  volatile: ['volatile', 'Qualifiers like volatile are not supported yet. Remove it.'],
-  register: ['register', 'Qualifiers like register are not supported yet. Remove it.'],
-  auto: ['auto', 'Qualifiers like auto are not supported yet. Remove it.'],
+const onlyIntFloat: ErrorText = { key: 'unsupported.onlyIntFloat' }
+const switchStatement: [ErrorText, ErrorText] = [{ key: 'construct.switch' }, { key: 'unsupported.switch' }]
+const qualifier = (keyword: string): [ErrorText, ErrorText] => [code(keyword), { key: 'unsupported.qualifier', values: { keyword } }]
+const notYet = (keyword: string): [ErrorText, ErrorText] => [code(keyword), { key: 'unsupported.keyword', values: { keyword } }]
+
+const unsupportedKeywords: Record<string, [construct: ErrorText, message: ErrorText]> = {
+  char: [code('char'), { key: 'unsupported.charType' }],
+  double: [code('double'), { key: 'unsupported.doubleType' }],
+  long: [code('long'), onlyIntFloat],
+  short: [code('short'), onlyIntFloat],
+  unsigned: [code('unsigned'), onlyIntFloat],
+  signed: [code('signed'), onlyIntFloat],
+  struct: [code('struct'), { key: 'unsupported.struct' }],
+  union: [code('union'), { key: 'unsupported.union' }],
+  enum: [code('enum'), { key: 'unsupported.enum' }],
+  typedef: notYet('typedef'),
+  do: [{ key: 'construct.doWhile' }, { key: 'unsupported.doWhile' }],
+  switch: switchStatement,
+  case: switchStatement,
+  default: switchStatement,
+  break: [code('break'), { key: 'unsupported.break' }],
+  continue: notYet('continue'),
+  goto: [code('goto'), { key: 'unsupported.goto' }],
+  sizeof: notYet('sizeof'),
+  const: qualifier('const'),
+  static: qualifier('static'),
+  extern: [code('extern'), { key: 'unsupported.extern' }],
+  volatile: qualifier('volatile'),
+  register: qualifier('register'),
+  auto: qualifier('auto'),
 }
 
+const bitwise = (op: string, message: ErrorText = { key: 'unsupported.bitwise' }): [ErrorText, ErrorText] => [
+  { key: 'construct.bitwise', values: { op } },
+  message,
+]
+
 // Operators that can show up after a value but are outside the supported subset.
-const unsupportedOperators: Record<string, [construct: string, message: string]> = {
-  '&': ['bitwise operator &', 'Bitwise operators are not supported yet. Did you mean && ?'],
-  '|': ['bitwise operator |', 'Bitwise operators are not supported yet. Did you mean || ?'],
-  '^': ['bitwise operator ^', 'Bitwise operators are not supported yet.'],
-  '<<': ['bitwise operator <<', 'Bitwise operators are not supported yet.'],
-  '>>': ['bitwise operator >>', 'Bitwise operators are not supported yet.'],
-  '?': ['ternary operator ?:', 'The ?: operator is not supported yet. Use if / else instead.'],
-  '->': ['pointer member access ->', 'Pointers and structs are not supported yet.'],
-  '.': ['struct member access', 'Structs are not supported yet.'],
+const unsupportedOperators: Record<string, [construct: ErrorText, message: ErrorText]> = {
+  '&': bitwise('&', { key: 'unsupported.bitwiseDidYouMean', values: { suggestion: '&&' } }),
+  '|': bitwise('|', { key: 'unsupported.bitwiseDidYouMean', values: { suggestion: '||' } }),
+  '^': bitwise('^'),
+  '<<': bitwise('<<'),
+  '>>': bitwise('>>'),
+  '?': [{ key: 'construct.ternary' }, { key: 'unsupported.ternary' }],
+  '->': [{ key: 'construct.arrow' }, { key: 'unsupported.pointersStructs' }],
+  '.': [{ key: 'construct.structMember' }, { key: 'unsupported.struct' }],
 }
 
 const assignmentOps = ['=', '+=', '-=', '*=', '/=', '%=']
@@ -182,25 +192,26 @@ function rejectUnsupportedOperator(token: Token) {
   const entry = unsupportedOperators[token.text]
   if (entry) throw new UnsupportedConstructError(token.line, entry[0], entry[1])
   if (assignmentOps.includes(token.text) || token.text === '++' || token.text === '--') {
+    const values = { op: token.text }
     throw new UnsupportedConstructError(
       token.line,
-      `${token.text} inside an expression`,
-      `Assignments like ${token.text} must be a statement of their own, e.g. "x = x + 1;".`,
+      { key: 'construct.assignInExpr', values },
+      { key: 'unsupported.assignInExpr', values },
     )
   }
   if (bitwiseAssignmentOps.includes(token.text)) {
-    throw new UnsupportedConstructError(token.line, `bitwise operator ${token.text}`, 'Bitwise operators are not supported yet.')
+    throw new UnsupportedConstructError(token.line, ...bitwise(token.text))
   }
 }
 
 function pointerError(line: number): UnsupportedConstructError {
-  return new UnsupportedConstructError(line, 'pointer', 'Pointers are not supported yet.')
+  return new UnsupportedConstructError(line, { key: 'construct.pointer' }, { key: 'unsupported.pointer' })
 }
 
-function describe(token: Token): string {
-  if (token.kind === 'eof') return 'the end of the file'
-  if (token.kind === 'string') return 'a string'
-  return `"${token.text}"`
+function describe(token: Token): ErrorText {
+  if (token.kind === 'eof') return { key: 'found.eof' }
+  if (token.kind === 'string') return { key: 'found.string' }
+  return { key: 'found.token', values: { text: token.text } }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,11 +243,11 @@ export function parse(source: string): Program {
     rejectUnsupportedKeyword(token)
     rejectUnsupportedOperator(token)
     if (text === ';' && token.text === ',') {
-      throw new UnsupportedConstructError(token.line, 'comma operator', 'The comma operator is not supported yet. Use separate statements.')
+      throw new UnsupportedConstructError(token.line, { key: 'construct.comma' }, { key: 'unsupported.comma' })
     }
     // A missing ";" belongs to the line before the next token.
     const line = text === ';' && pos > 0 ? tokens[pos - 1].line : token.line
-    throw new CodeError(line, `Expected "${text}" but found ${describe(token)}.`)
+    throw new CodeError(line, 'codeError.expected', { text, found: describe(token) })
   }
 
   function expectIdentifier(): Token {
@@ -244,7 +255,7 @@ export function parse(source: string): Program {
     if (token.kind === 'identifier') return advance()
     if (token.text === '*') throw pointerError(token.line)
     rejectUnsupportedKeyword(token)
-    throw new CodeError(token.line, `Expected a name but found ${describe(token)}.`)
+    throw new CodeError(token.line, 'codeError.expectedName', { found: describe(token) })
   }
 
   // ----- Top level: function definitions only -----
@@ -255,7 +266,7 @@ export function parse(source: string): Program {
     const token = peek()
     rejectUnsupportedKeyword(token)
     if (!isType() && !is('void')) {
-      throw new CodeError(token.line, `Expected a function like "int main() {" but found ${describe(token)}.`)
+      throw new CodeError(token.line, 'codeError.expectedFunction', { found: describe(token) })
     }
     const returnType = advance().text as NumType | 'void'
     if (is('*')) throw pointerError(peek().line)
@@ -264,8 +275,8 @@ export function parse(source: string): Program {
     if (!is('(')) {
       throw new UnsupportedConstructError(
         nameToken.line,
-        'global variable',
-        `Global variables are not supported yet. Declare ${nameToken.text} inside a function.`,
+        { key: 'construct.globalVariable' },
+        { key: 'unsupported.globalVariable', values: { name: nameToken.text } },
       )
     }
 
@@ -273,10 +284,10 @@ export function parse(source: string): Program {
     if (accept(';')) continue // A prototype like "int add(int a, int b);" — the definition comes later.
 
     if (nameToken.text === 'main' && params.length > 0) {
-      throw new UnsupportedConstructError(nameToken.line, 'main with parameters', 'main() with parameters (argc, argv) is not supported. Use int main().')
+      throw new UnsupportedConstructError(nameToken.line, { key: 'construct.mainParams' }, { key: 'unsupported.mainParams' })
     }
     if (functions.has(nameToken.text)) {
-      throw new CodeError(nameToken.line, `The function ${nameToken.text} is defined twice.`)
+      throw new CodeError(nameToken.line, 'codeError.definedTwice', { name: nameToken.text })
     }
 
     expect('{')
@@ -286,7 +297,7 @@ export function parse(source: string): Program {
   }
 
   if (!functions.has('main')) {
-    throw new CodeError(tokens[pos].line, 'The program needs a main function: int main() { ... }')
+    throw new CodeError(tokens[pos].line, 'codeError.noMain')
   }
 
   return { functions }
@@ -299,7 +310,7 @@ export function parse(source: string): Program {
       if (params.length > 0) expect(',')
       const typeToken = peek()
       rejectUnsupportedKeyword(typeToken)
-      if (!isType()) throw new CodeError(typeToken.line, `Expected a parameter type (int or float) but found ${describe(typeToken)}.`)
+      if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
       const type = advance().text as NumType
       if (is('*')) throw pointerError(peek().line)
       // Names are optional in prototypes: "int add(int, int);"
@@ -314,10 +325,7 @@ export function parse(source: string): Program {
         if (accept('[')) {
           const columnsToken = peek()
           if (columnsToken.kind !== 'number' || !/^\d+$/.test(columnsToken.text)) {
-            throw new CodeError(
-              columnsToken.line,
-              `A 2D array parameter needs its number of columns, e.g. int ${name || 'grid'}[][3].`,
-            )
+            throw new CodeError(columnsToken.line, 'codeError.gridParamColumns', { name: name || 'grid' })
           }
           advance()
           expect(']')
@@ -336,7 +344,7 @@ export function parse(source: string): Program {
   function parseStatementsUntilBrace(): Stmt[] {
     const body: Stmt[] = []
     while (!is('}')) {
-      if (peek().kind === 'eof') throw new CodeError(peek().line, 'A "{" is never closed. Add the missing "}".')
+      if (peek().kind === 'eof') throw new CodeError(peek().line, 'codeError.unclosedBrace')
       body.push(parseStatement())
     }
     return body
@@ -354,7 +362,7 @@ export function parse(source: string): Program {
     }
     if (accept(';')) return { kind: 'block', line, body: [] }
     if (isType()) return parseDeclaration()
-    if (is('void')) throw new CodeError(line, 'A variable cannot have the type void.')
+    if (is('void')) throw new CodeError(line, 'codeError.voidVariable')
 
     if (accept('if')) {
       expect('(')
@@ -395,7 +403,7 @@ export function parse(source: string): Program {
       return { kind: 'return', line, value }
     }
 
-    if (is('else')) throw new CodeError(line, 'This else has no matching if before it.')
+    if (is('else')) throw new CodeError(line, 'codeError.elseWithoutIf')
 
     if (token.kind === 'identifier' && token.text === 'printf' && is('(', 1)) return parsePrintf()
 
@@ -414,7 +422,7 @@ export function parse(source: string): Program {
       if (is('*')) throw pointerError(peek().line)
       const nameToken = expectIdentifier()
       if (is('(')) {
-        throw new CodeError(nameToken.line, `Functions must be defined outside of other functions. Move ${nameToken.text} out of this one.`)
+        throw new CodeError(nameToken.line, 'codeError.nestedFunction', { name: nameToken.text })
       }
 
       const declarator: Declarator = {
@@ -433,7 +441,7 @@ export function parse(source: string): Program {
         expect(']')
         if (accept('[')) {
           if (is(']')) {
-            throw new CodeError(peek().line, `The number of columns of ${nameToken.text} must be given, e.g. ${nameToken.text}[3][4].`)
+            throw new CodeError(peek().line, 'codeError.gridColumns', { name: nameToken.text })
           }
           declarator.columns = parseExpression()
           expect(']')
@@ -447,13 +455,13 @@ export function parse(source: string): Program {
           if (declarator.columns) declarator.gridInit = parseGridInit(nameToken.text)
           else declarator.arrayInit = parseInitList()
         } else {
-          if (is('{')) throw new CodeError(peek().line, `${nameToken.text} is not an array, so it can't be set to a { ... } list.`)
+          if (is('{')) throw new CodeError(peek().line, 'codeError.notArrayInit', { name: nameToken.text })
           declarator.init = parseExpression()
         }
       }
 
       if (declarator.isArray && !declarator.size && !declarator.arrayInit && !declarator.gridInit) {
-        throw new CodeError(nameToken.line, `The array ${nameToken.text} needs a size, e.g. ${nameToken.text}[5].`)
+        throw new CodeError(nameToken.line, 'codeError.arraySize', { name: nameToken.text })
       }
       declarators.push(declarator)
     } while (accept(','))
@@ -483,7 +491,7 @@ export function parse(source: string): Program {
       if (rows.length > 0) expect(',')
       if (is('}')) break // trailing comma
       if (!is('{')) {
-        throw new CodeError(peek().line, `Write each row of ${name} in its own braces, e.g. {{1, 2}, {3, 4}}.`)
+        throw new CodeError(peek().line, 'codeError.gridRows', { name })
       }
       rows.push(parseInitList())
     }
@@ -539,7 +547,7 @@ export function parse(source: string): Program {
     expect('(')
     const formatToken = peek()
     if (formatToken.kind !== 'string') {
-      throw new CodeError(formatToken.line, 'printf needs a text string first, e.g. printf("x = %d\\n", x).')
+      throw new CodeError(formatToken.line, 'codeError.printfFormat')
     }
     advance()
 
@@ -558,15 +566,12 @@ export function parse(source: string): Program {
 
     const specifiers = readFormatSpecifiers(formatToken.text, line)
     if (specifiers.length !== args.length) {
-      throw new CodeError(
-        line,
-        `The printf text has ${specifiers.length} placeholder(s) (%d, %f, %s) but ${args.length} value(s) were given.`,
-      )
+      throw new CodeError(line, 'codeError.printfCount', { placeholders: specifiers.length, given: args.length })
     }
     specifiers.forEach((specifier, i) => {
       const isText = args[i].kind === 'text'
-      if (specifier === 's' && !isText) throw new CodeError(line, '%s needs a text string like "hello". Use %d or %f for numbers.')
-      if (specifier !== 's' && isText) throw new CodeError(line, `%${specifier} needs a number, but a text string was given. Use %s for text.`)
+      if (specifier === 's' && !isText) throw new CodeError(line, 'codeError.printfS')
+      if (specifier !== 's' && isText) throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
     })
 
     return { kind: 'printf', line, format: formatToken.text, args }
@@ -603,7 +608,7 @@ export function parse(source: string): Program {
         return parseUnary()
       }
       if (token.text === '*' || token.text === '&') throw pointerError(token.line)
-      if (token.text === '~') throw new UnsupportedConstructError(token.line, 'bitwise operator ~', 'Bitwise operators are not supported yet.')
+      if (token.text === '~') throw new UnsupportedConstructError(token.line, ...bitwise('~'))
       if (token.text === '++' || token.text === '--') rejectUnsupportedOperator(token)
     }
     return parsePrimary()
@@ -622,7 +627,7 @@ export function parse(source: string): Program {
       advance()
       if (accept('(')) {
         if (token.text === 'printf') {
-          throw new UnsupportedConstructError(token.line, 'printf inside an expression', 'printf must be a statement of its own.')
+          throw new UnsupportedConstructError(token.line, { key: 'construct.printfInExpr' }, { key: 'unsupported.printfInExpr' })
         }
         const args: Expr[] = []
         while (!is(')')) {
@@ -640,7 +645,7 @@ export function parse(source: string): Program {
     if (accept('(')) {
       if (isType() || peek().kind === 'keyword') {
         rejectUnsupportedKeyword(peek())
-        throw new UnsupportedConstructError(token.line, 'type cast', 'Type casts like (float)x are not supported yet.')
+        throw new UnsupportedConstructError(token.line, { key: 'construct.cast' }, { key: 'unsupported.cast' })
       }
       const expr = parseExpression()
       expect(')')
@@ -649,11 +654,11 @@ export function parse(source: string): Program {
 
     if (token.kind === 'string') throw stringError(token.line)
     if (token.kind === 'char') {
-      throw new UnsupportedConstructError(token.line, `character ${token.text}`, 'Characters (char) are not supported yet. Use int or float.')
+      throw new UnsupportedConstructError(token.line, { key: 'construct.char', values: { text: token.text } }, { key: 'unsupported.char' })
     }
     rejectUnsupportedKeyword(token)
     rejectUnsupportedOperator(token)
-    throw new CodeError(token.line, `Expected a value but found ${describe(token)}.`)
+    throw new CodeError(token.line, 'codeError.expectedValue', { found: describe(token) })
   }
 }
 
@@ -672,8 +677,8 @@ function readFormatSpecifiers(format: string, line: number): string[] {
     if (placeholder !== '%d' && placeholder !== '%f' && placeholder !== '%s') {
       throw new UnsupportedConstructError(
         line,
-        `printf placeholder ${placeholder}`,
-        `The printf placeholder ${placeholder} is not supported yet. Only %d, %f and %s work.`,
+        { key: 'construct.placeholder', values: { placeholder } },
+        { key: 'unsupported.placeholder', values: { placeholder } },
       )
     }
     specifiers.push(placeholder[1])
@@ -683,9 +688,9 @@ function readFormatSpecifiers(format: string, line: number): string[] {
 }
 
 function tooManyDimensionsError(line: number): UnsupportedConstructError {
-  return new UnsupportedConstructError(line, '3D array', 'Arrays with more than two dimensions are not supported yet.')
+  return new UnsupportedConstructError(line, { key: 'construct.array3d' }, { key: 'unsupported.array3d' })
 }
 
 function stringError(line: number): UnsupportedConstructError {
-  return new UnsupportedConstructError(line, 'string', 'Text strings can only be used directly inside printf.')
+  return new UnsupportedConstructError(line, { key: 'construct.string' }, { key: 'unsupported.string' })
 }

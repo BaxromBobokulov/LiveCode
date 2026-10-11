@@ -173,15 +173,16 @@ describe('runUserCode', () => {
   it('reports an out-of-range 2D index as a code error', () => {
     const result = runUserCode(lines('int main() {', '    int g[2][2] = {{1, 2}, {3, 4}};', '    g[0][2] = 1;', '    return 0;', '}'))
     expect('error' in result && result.error).toBeInstanceOf(CodeError)
-    expect('error' in result && result.error.message).toBe(
-      'g[0][2] is outside the array. Each row of g has 2 columns, so valid column indexes are 0 to 1.',
-    )
+    expect('error' in result && result.error.text).toEqual({
+      key: 'codeError.colOutside',
+      values: { name: 'g', row: 0, col: 2, cols: 2, last: 1 },
+    })
   })
 
   it('reports a 3D array as not supported', () => {
     const result = runUserCode(lines('int main() {', '    int cube[2][2][2];', '    return 0;', '}'))
     expect('error' in result && result.error).toBeInstanceOf(UnsupportedConstructError)
-    expect('error' in result && result.error).toMatchObject({ line: 2, construct: '3D array' })
+    expect('error' in result && result.error).toMatchObject({ line: 2, construct: { key: 'construct.array3d' } })
   })
 
   it.each(examples.map((example) => [example.id, example] as const))(
@@ -224,12 +225,13 @@ describe('runUserCode', () => {
     expect('error' in result).toBe(true)
     if (!('error' in result)) return
     expect(result.error).toBeInstanceOf(UnsupportedConstructError)
-    expect(result.error).toMatchObject({ line: 3, construct: 'pointer' })
+    expect(result.error).toMatchObject({ line: 3, construct: { key: 'construct.pointer' } })
   })
 
   it('reports mistakes in the program as code errors instead of throwing', () => {
     const result = runUserCode(lines('int main() {', '    int x = 1 / 0;', '    return 0;', '}'))
     expect('error' in result && result.error).toBeInstanceOf(CodeError)
     expect('error' in result && result.error.line).toBe(2)
+    expect('error' in result && result.error.text.key).toBe('codeError.divisionByZero')
   })
 })

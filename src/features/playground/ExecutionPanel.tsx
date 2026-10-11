@@ -1,7 +1,8 @@
 import { motion, useReducedMotion } from 'framer-motion'
+import type { Ref } from 'react'
 import Button from '../../components/Button'
 import ProgressBar from '../../components/ProgressBar'
-import { UnsupportedConstructError } from '../../engine/errors'
+import { UnsupportedConstructError, type ErrorText } from '../../engine/errors'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
 import ArrayVisualizer from './ArrayVisualizer'
@@ -9,7 +10,7 @@ import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
 import VariablesPanel from './VariablesPanel'
 
-function ExecutionPanel() {
+function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const isPlaying = usePlaygroundStore((state) => state.isPlaying)
@@ -27,8 +28,16 @@ function ExecutionPanel() {
   const reduceMotion = useReducedMotion()
   const explanationClass = 'rounded-container border border-border bg-surface px-3.5 py-3 text-body-md text-text'
 
+  /** Puts an engine error text into words in the chosen language, including texts nested in its values. */
+  function errorText({ key, values = {} }: ErrorText): string {
+    const filled = Object.fromEntries(
+      Object.entries(values).map(([name, value]) => [name, typeof value === 'object' ? errorText(value) : value]),
+    )
+    return t(key, filled)
+  }
+
   return (
-    <section className="flex min-w-0 flex-1 flex-col rounded-panel border border-border bg-panel">
+    <section ref={ref} className="flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel">
       <header className="flex h-11.75 items-center justify-between border-b border-border px-4.5">
         <h2 className="text-body-md font-semibold">{t('panel.execution')}</h2>
         <span className="text-body-sm font-semibold text-textMuted">
@@ -58,11 +67,11 @@ function ExecutionPanel() {
           <div role="alert" className="rounded-container border border-error bg-errorTint px-3.5 py-3 text-body-md">
             <p className="font-semibold text-error">
               {runError instanceof UnsupportedConstructError
-                ? t('error.unsupported', { construct: runError.construct })
+                ? t('error.unsupported', { construct: errorText(runError.construct) })
                 : t('error.codeError')}
               <span className="font-normal"> · {t('error.line', { line: runError.line })}</span>
             </p>
-            <p className="mt-1 text-textMuted">{runError.message}</p>
+            <p className="mt-1 text-textMuted">{errorText(runError.text)}</p>
           </div>
         )}
 
