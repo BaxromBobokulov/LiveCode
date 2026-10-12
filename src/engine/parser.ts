@@ -1,5 +1,6 @@
-import { CodeError, UnsupportedConstructError, code, type ErrorText } from './errors'
+import { CodeError, UnsupportedConstructError, code } from './errors'
 import { tokenize, type Token } from './lexer'
+import type { Phrase } from './types'
 
 // ---------------------------------------------------------------------------
 // AST — every node carries the 1-based source line it came from.
@@ -129,12 +130,12 @@ export function formatNumber(value: number, type: NumType): string {
 // Unsupported constructs
 // ---------------------------------------------------------------------------
 
-const onlyIntFloat: ErrorText = { key: 'unsupported.onlyIntFloat' }
-const switchStatement: [ErrorText, ErrorText] = [{ key: 'construct.switch' }, { key: 'unsupported.switch' }]
-const qualifier = (keyword: string): [ErrorText, ErrorText] => [code(keyword), { key: 'unsupported.qualifier', values: { keyword } }]
-const notYet = (keyword: string): [ErrorText, ErrorText] => [code(keyword), { key: 'unsupported.keyword', values: { keyword } }]
+const onlyIntFloat: Phrase = { key: 'unsupported.onlyIntFloat' }
+const switchStatement: [Phrase, Phrase] = [{ key: 'construct.switch' }, { key: 'unsupported.switch' }]
+const qualifier = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.qualifier', values: { keyword } }]
+const notYet = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.keyword', values: { keyword } }]
 
-const unsupportedKeywords: Record<string, [construct: ErrorText, message: ErrorText]> = {
+const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> = {
   char: [code('char'), { key: 'unsupported.charType' }],
   double: [code('double'), { key: 'unsupported.doubleType' }],
   long: [code('long'), onlyIntFloat],
@@ -161,13 +162,13 @@ const unsupportedKeywords: Record<string, [construct: ErrorText, message: ErrorT
   auto: qualifier('auto'),
 }
 
-const bitwise = (op: string, message: ErrorText = { key: 'unsupported.bitwise' }): [ErrorText, ErrorText] => [
+const bitwise = (op: string, message: Phrase = { key: 'unsupported.bitwise' }): [Phrase, Phrase] => [
   { key: 'construct.bitwise', values: { op } },
   message,
 ]
 
 // Operators that can show up after a value but are outside the supported subset.
-const unsupportedOperators: Record<string, [construct: ErrorText, message: ErrorText]> = {
+const unsupportedOperators: Record<string, [construct: Phrase, message: Phrase]> = {
   '&': bitwise('&', { key: 'unsupported.bitwiseDidYouMean', values: { suggestion: '&&' } }),
   '|': bitwise('|', { key: 'unsupported.bitwiseDidYouMean', values: { suggestion: '||' } }),
   '^': bitwise('^'),
@@ -208,7 +209,7 @@ function pointerError(line: number): UnsupportedConstructError {
   return new UnsupportedConstructError(line, { key: 'construct.pointer' }, { key: 'unsupported.pointer' })
 }
 
-function describe(token: Token): ErrorText {
+function describe(token: Token): Phrase {
   if (token.kind === 'eof') return { key: 'found.eof' }
   if (token.kind === 'string') return { key: 'found.string' }
   return { key: 'found.token', values: { text: token.text } }

@@ -1,4 +1,4 @@
-import { CodeError, UnsupportedConstructError, code, type ErrorText, type RunError } from './errors'
+import { CodeError, UnsupportedConstructError, code, type RunError } from './errors'
 import { explain, type Shown, type StepFact } from './explain'
 import {
   formatNumber,
@@ -14,7 +14,7 @@ import {
   type Stmt,
   type Target,
 } from './parser'
-import type { ArrayView, GridCell, GridView, LoopInfo, Step } from './types'
+import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step } from './types'
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
@@ -173,7 +173,7 @@ export function execute(program: Program): Step[] {
       array: access ? arrayView(access.name, access.store, access.active) : firstArray,
       loop: loopRun?.infos.at(-1) ?? null,
       output,
-      explanation: [...cellReads, fact].map(explain).join(' '),
+      explanation: [...cellReads, fact].flatMap(explain),
     })
     access = null
     cellReads = []
@@ -357,7 +357,7 @@ export function execute(program: Program): Step[] {
     index: Expr,
     size: number,
     line: number,
-    outsideMessage: (value: number) => Required<ErrorText>,
+    outsideMessage: (value: number) => Required<Phrase>,
   ): number {
     const value = evaluate(index)
     if (value.type !== 'int') throw new CodeError(line, 'codeError.indexFloat', { index: toSource(index) })

@@ -32,20 +32,20 @@ function buildMatrixExample(): Step[] {
   ]
   const rows = grid.length
   const cols = grid[0].length
-  trace.step(4, 'Declare a 2D integer array grid with 3 rows and 3 columns.', { set: { grid } })
+  trace.step(4, { key: 'step.matrix.declare', values: { rows, cols } }, { set: { grid } })
 
   let sum = 0
-  trace.step(5, 'Create sum and start it at 0.', { set: { sum } })
-  trace.step(6, 'Declare the row counter i. It has no value yet.', { set: { i: null } })
-  trace.step(7, 'Declare the column counter j. It has no value yet.', { set: { j: null } })
+  trace.step(5, { key: 'step.createStartAt', values: { name: 'sum', value: 0 } }, { set: { sum } })
+  trace.step(6, { key: 'step.matrix.declareI' }, { set: { i: null } })
+  trace.step(7, { key: 'step.matrix.declareJ' }, { set: { j: null } })
 
   for (let i = 0; i < rows; i++) {
     const rowLoop = { line: 9, iteration: i + 1, total: rows }
     trace.step(
       9,
       i === 0
-        ? 'Start the outer loop: set i to 0. 0 < 3 is true, so walk through row 0.'
-        : `Increase i to ${i}. ${i} < 3 is true, so walk through row ${i}.`,
+        ? { key: 'step.matrix.rowStart', values: { condition: `0 < ${rows}` } }
+        : { key: 'step.matrix.rowNext', values: { i, condition: `${i} < ${rows}` } },
       { set: { i }, loop: rowLoop },
     )
 
@@ -54,25 +54,28 @@ function buildMatrixExample(): Step[] {
       trace.step(
         10,
         j === 0
-          ? `Start the inner loop: set j to 0. 0 < 3 is true, so visit grid[${i}][0].`
-          : `Increase j to ${j}. ${j} < 3 is true, so visit grid[${i}][${j}].`,
+          ? { key: 'step.matrix.colStart', values: { i, condition: `0 < ${cols}` } }
+          : { key: 'step.matrix.colNext', values: { i, j, condition: `${j} < ${cols}` } },
         { set: { j }, activeIndex: { row: i, col: j }, loop: colLoop },
       )
 
       sum = sum + grid[i][j]
-      trace.step(11, `Read grid[${i}][${j}] (value ${grid[i][j]}) and add it to sum. sum is now ${sum}.`, {
+      trace.step(11, { key: 'step.matrix.readAdd', values: { i, j, value: grid[i][j], sum } }, {
         set: { sum },
         activeIndex: { row: i, col: j },
         loop: colLoop,
       })
     }
 
-    trace.step(10, `Increase j to 3. 3 < 3 is false, so row ${i} is done.`, { set: { j: cols }, loop: rowLoop })
+    trace.step(10, { key: 'step.matrix.rowDone', values: { j: cols, condition: `${cols} < ${cols}`, i } }, {
+      set: { j: cols },
+      loop: rowLoop,
+    })
   }
 
-  trace.step(9, 'Increase i to 3. 3 < 3 is false, so the outer loop ends.', { set: { i: rows } })
-  trace.step(15, `Print the result: Sum = ${sum}.`, { print: `Sum = ${sum}\n` })
-  trace.step(16, 'Return 0 from main. The program finished successfully.')
+  trace.step(9, { key: 'step.matrix.outerEnd', values: { i: rows, condition: `${rows} < ${rows}` } }, { set: { i: rows } })
+  trace.step(15, { key: 'step.printResult', values: { text: `Sum = ${sum}` } }, { print: `Sum = ${sum}\n` })
+  trace.step(16, { key: 'explain.returnFromMain', values: { value: 0, name: 'main' } })
 
   return trace.steps
 }

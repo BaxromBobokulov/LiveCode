@@ -1,4 +1,4 @@
-import type { ArrayView, GridCell, GridView, LoopInfo, Step } from './types'
+import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step } from './types'
 
 /** A variable's value while tracing. `null` means declared but not assigned yet. */
 type Value = number | number[] | number[][] | null
@@ -31,14 +31,15 @@ function formatValue(value: Value): string {
 /**
  * Records a program's execution one line at a time.
  * Call `step()` after "running" each line; it snapshots every variable and the
- * console output so far.
+ * console output so far. The explanation is a translation key plus its values,
+ * e.g. { key: 'step.createStartAt', values: { name: 'sum', value: 0 } }.
  */
 export function createTrace(scope = 'main()') {
   const steps: Step[] = []
   const values = new Map<string, Value>()
   let output = ''
 
-  function step(line: number, explanation: string, options: StepOptions = {}) {
+  function step(line: number, explanation: Phrase, options: StepOptions = {}) {
     const { set = {}, activeIndex = null, secondIndex, loop = null, print = '' } = options
 
     for (const [name, value] of Object.entries(set)) {
@@ -68,7 +69,7 @@ export function createTrace(scope = 'main()') {
       array,
       loop,
       output,
-      explanation,
+      explanation: [explanation],
     })
   }
 

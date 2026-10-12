@@ -1,11 +1,14 @@
-// Turns what the interpreter just did into the plain-language sentence shown
-// under the Variables panel. Every sentence comes from a fixed template, filled
-// in with the concrete names and values of that step.
+// Turns what the interpreter just did into the plain-language sentences shown
+// under the Variables panel. Every sentence is a fixed template (a translation
+// key, see src/i18n/translations.ts) filled in with the concrete names and
+// values of that step, so the Playground can show it in the chosen language.
 //
 // Values are passed in three forms:
 //   source — the expression as written:            "sum + arr[i]"
 //   work   — the same with each value filled in:   "4 + 8"
 //   result — what it evaluated to:                 "12"
+
+import type { Phrase } from './types'
 
 /** A value as it appears in an explanation. */
 export type Shown = { source: string; work: string; result: string }
@@ -41,7 +44,7 @@ export type StepFact =
   | { kind: 'end'; name: string; caller: string | null }
   | { kind: 'print'; text: string }
 
-/** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. */
+/** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. Only code and numbers, so no translation. */
 function showValue({ source, work, result }: Shown): string {
   if (source === result) return result
   if (work === result || work === source) return `${source} (${result})`
@@ -49,120 +52,165 @@ function showValue({ source, work, result }: Shown): string {
 }
 
 /** "i < 5: 0 < 5 is true" */
-function showCondition({ source, work }: Shown, result: boolean): string {
-  return work === source ? `${source} is ${result}` : `${source}: ${work} is ${result}`
+function showCondition({ source, work }: Shown, result: boolean): Phrase {
+  const truth: Phrase = { key: result ? 'explain.true' : 'explain.false' }
+  return work === source
+    ? { key: 'explain.condition', values: { source, result: truth } }
+    : { key: 'explain.conditionWork', values: { source, work, result: truth } }
 }
 
-function list(items: string[]): string {
-  if (items.length <= 1) return items.join('')
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+/** "an int" or "a float" */
+function typeName(type: string): Phrase {
+  return { key: type === 'int' ? 'explain.type.int' : 'explain.type.float' }
 }
 
-/** Short form used inside a loop check: "set i to 0", "increase i to 1". */
-function shortPhrase(fact: StepFact): string {
+/**
+ * Short form used inside a loop check: "set i to 0", "increase i to 1".
+ * `capital` picks the form that starts a sentence ("Increase i to 1").
+ */
+function shortPhrase(fact: StepFact, capital: boolean): Phrase {
   switch (fact.kind) {
     case 'declare':
-      return fact.value ? `create ${fact.name} and set it to ${fact.value.result}` : `create ${fact.name}`
+      return fact.value
+        ? { key: capital ? 'explain.shortCap.createValue' : 'explain.short.createValue', values: { name: fact.name, value: fact.value.result } }
+        : { key: capital ? 'explain.shortCap.create' : 'explain.short.create', values: { name: fact.name } }
     case 'assign':
-      return `set ${fact.target} to ${fact.value.result}`
-    case 'update':
-      return `${fact.op === '++' ? 'increase' : 'decrease'} ${fact.target} to ${fact.result}`
-    default:
-      return explain(fact).replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase())
+      return { key: capital ? 'explain.shortCap.set' : 'explain.short.set', values: { target: fact.target, value: fact.value.result } }
+    case 'update': {
+      const values = { target: fact.target, value: fact.result }
+      if (fact.op === '++') return { key: capital ? 'explain.shortCap.increase' : 'explain.short.increase', values }
+      return { key: capital ? 'explain.shortCap.decrease' : 'explain.short.decrease', values }
+    }
+    default: {
+      // Only declarations, assignments, updates and plain expressions can sit in a for (...) header.
+      const value = fact.kind === 'expr' ? showValue(fact.value) : ''
+      return { key: capital ? 'explain.shortCap.expr' : 'explain.short.expr', values: { value } }
+    }
   }
 }
 
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
-export function explain(fact: StepFact): string {
+/** The sentences describing one fact, usually just one. */
+export function explain(fact: StepFact): Phrase[] {
   switch (fact.kind) {
     case 'declare':
-      return fact.value
-        ? `Create ${fact.name} and set it to ${showValue(fact.value)}.`
-        : `Declare ${fact.name}. It has no value yet.`
+      return [
+        fact.value
+          ? { key: 'explain.declareValue', values: { name: fact.name, value: showValue(fact.value) } }
+          : { key: 'explain.declareEmpty', values: { name: fact.name } },
+      ]
 
-    case 'declareArray':
-      return fact.values
-        ? `Declare ${fact.type === 'int' ? 'an' : 'a'} ${fact.type} array ${fact.name} with ${fact.size} elements: [${fact.values.join(', ')}].`
-        : `Declare ${fact.type === 'int' ? 'an' : 'a'} ${fact.type} array ${fact.name} with ${fact.size} elements. They have no values yet (shown as 0).`
+    case 'declareArray': {
+      const values = { type: typeName(fact.type), name: fact.name, size: fact.size }
+      return [
+        fact.values
+          ? { key: 'explain.declareArrayValues', values: { ...values, values: fact.values.join(', ') } }
+          : { key: 'explain.declareArrayEmpty', values },
+      ]
+    }
 
     case 'declareGrid': {
-      const shape = `${fact.type === 'int' ? 'an' : 'a'} ${fact.type} 2D array ${fact.name} with ${fact.rows} rows and ${fact.cols} columns`
-      return fact.values
-        ? `Declare ${shape}: [${fact.values.map((row) => `[${row.join(', ')}]`).join(', ')}].`
-        : `Declare ${shape}. They have no values yet (shown as 0).`
+      const values = { type: typeName(fact.type), name: fact.name, rows: fact.rows, cols: fact.cols }
+      return [
+        fact.values
+          ? {
+              key: 'explain.declareGridValues',
+              values: { ...values, values: fact.values.map((row) => `[${row.join(', ')}]`).join(', ') },
+            }
+          : { key: 'explain.declareGridEmpty', values },
+      ]
     }
 
     case 'readCell':
-      return `Read ${fact.target} (value ${fact.value}).`
+      return [{ key: 'explain.readCell', values: { target: fact.target, value: fact.value } }]
 
     // Writes to a 2D cell use this too: the target names the exact cell, e.g. "Set grid[0][0] to grid[i][j] + 1: 4 + 1 = 5."
     case 'assign':
-      return `Set ${fact.target} to ${showValue(fact.value)}.`
+      return [{ key: 'explain.assign', values: { target: fact.target, value: showValue(fact.value) } }]
 
     case 'update':
-      return `${fact.op === '++' ? 'Increase' : 'Decrease'} ${fact.target} by 1. ${fact.target} is now ${fact.result}.`
+      return [
+        {
+          key: fact.op === '++' ? 'explain.increase' : 'explain.decrease',
+          values: { target: fact.target, result: fact.result },
+        },
+      ]
 
     case 'expr':
-      return `Work out ${showValue(fact.value)}. The result is not stored anywhere.`
+      return [{ key: 'explain.expr', values: { value: showValue(fact.value) } }]
 
     case 'loopCheck': {
-      let setup = ''
+      const sentences: Phrase[] = []
       if (fact.isFirst) {
-        setup = fact.setup.length > 0 ? `Start the loop: ${list(fact.setup.map(shortPhrase))}. ` : 'Start the loop. '
+        sentences.push(
+          fact.setup.length > 0
+            ? { key: 'explain.loopStartWith', values: { steps: fact.setup.map((f) => shortPhrase(f, false)) } }
+            : { key: 'explain.loopStart' },
+        )
       } else if (fact.setup.length > 0) {
-        setup = `${capitalize(list(fact.setup.map(shortPhrase)))}. `
+        const steps = fact.setup.map((f, i) => shortPhrase(f, i === 0))
+        sentences.push({ key: 'explain.loopSetup', values: { steps } })
       }
 
-      const check = fact.condition
-        ? `Check ${showCondition(fact.condition, fact.result)}`
-        : 'There is no condition to check'
-      let outcome: string
-      if (fact.result) outcome = fact.isFirst ? 'so run the loop body.' : 'so run the loop body again.'
-      else outcome = fact.isFirst ? 'so the loop body never runs.' : 'so the loop ends.'
-      return `${setup}${check}, ${outcome}`
+      let outcome: Phrase
+      if (fact.result) outcome = { key: fact.isFirst ? 'explain.loop.run' : 'explain.loop.runAgain' }
+      else outcome = { key: fact.isFirst ? 'explain.loop.never' : 'explain.loop.ends' }
+      sentences.push(
+        fact.condition
+          ? { key: 'explain.loopCheck', values: { condition: showCondition(fact.condition, fact.result), outcome } }
+          : { key: 'explain.loopNoCondition', values: { outcome } },
+      )
+      return sentences
     }
 
     case 'ifCheck': {
-      const check = `Check ${fact.branch === 'if' ? 'if' : 'else if'} ${showCondition(fact.condition, fact.result)}`
-      let outcome: string
-      if (fact.result) outcome = fact.branch === 'if' ? 'so run the if block.' : 'so run this else if block.'
-      else if (fact.next === 'else if') outcome = 'so check the next condition.'
-      else if (fact.next === 'else') outcome = 'so run the else block.'
-      else outcome = 'so skip the if block.'
-      return `${check}, ${outcome}`
+      let outcome: Phrase
+      if (fact.result) outcome = { key: fact.branch === 'if' ? 'explain.if.runIf' : 'explain.if.runElseIf' }
+      else if (fact.next === 'else if') outcome = { key: 'explain.if.next' }
+      else if (fact.next === 'else') outcome = { key: 'explain.if.runElse' }
+      else outcome = { key: 'explain.if.skip' }
+      const condition = showCondition(fact.condition, fact.result)
+      return [{ key: fact.branch === 'if' ? 'explain.ifCheck' : 'explain.elseIfCheck', values: { condition, outcome } }]
     }
 
     case 'call': {
-      const call = `Call ${fact.name}(${fact.args.join(', ')}).`
-      if (fact.params.length === 0) return `${call} It takes no arguments.`
-      const params = fact.params.map((p) => (p.isArray ? `${p.name} is the array ${p.value}` : `${p.name} = ${p.value}`))
-      return `${call} Inside ${fact.name}, ${list(params)}.`
+      const call = `${fact.name}(${fact.args.join(', ')})`
+      if (fact.params.length === 0) return [{ key: 'explain.callNoArgs', values: { call } }]
+      const params: Phrase[] = fact.params.map((p) => ({
+        key: p.isArray ? 'explain.paramArray' : 'explain.param',
+        values: { name: p.name, value: p.value },
+      }))
+      return [{ key: 'explain.call', values: { call, name: fact.name, params } }]
     }
 
-    case 'return':
+    case 'return': {
+      const value = fact.value ? showValue(fact.value) : ''
       if (fact.caller === null) {
-        return fact.value
-          ? `Return ${showValue(fact.value)} from ${fact.name}. The program finished successfully.`
-          : `Leave ${fact.name}. The program finished successfully.`
+        return [
+          fact.value
+            ? { key: 'explain.returnFromMain', values: { value, name: fact.name } }
+            : { key: 'explain.leaveMain', values: { name: fact.name } },
+        ]
       }
-      return fact.value
-        ? `Leave ${fact.name} and go back to ${fact.caller}, returning ${showValue(fact.value)}.`
-        : `Leave ${fact.name} and go back to ${fact.caller}.`
+      return [
+        fact.value
+          ? { key: 'explain.returnTo', values: { name: fact.name, caller: fact.caller, value } }
+          : { key: 'explain.leaveTo', values: { name: fact.name, caller: fact.caller } },
+      ]
+    }
 
     case 'end':
-      return fact.caller === null
-        ? `Reach the end of ${fact.name}. The program finished successfully.`
-        : `Reach the end of ${fact.name} and go back to ${fact.caller}.`
+      return [
+        fact.caller === null
+          ? { key: 'explain.endMain', values: { name: fact.name } }
+          : { key: 'explain.endTo', values: { name: fact.name, caller: fact.caller } },
+      ]
 
     case 'print': {
-      if (fact.text === '') return 'Print nothing: the text is empty.'
-      if (fact.text === '\n') return 'Print a line break, so the next output starts on a new line.'
+      if (fact.text === '') return [{ key: 'explain.printEmpty' }]
+      if (fact.text === '\n') return [{ key: 'explain.printNewline' }]
       const endsLine = fact.text.endsWith('\n')
-      const visible = (endsLine ? fact.text.slice(0, -1) : fact.text).replace(/\n/g, '\\n')
-      return endsLine ? `Print "${visible}" and move to a new line.` : `Print "${visible}".`
+      const text = (endsLine ? fact.text.slice(0, -1) : fact.text).replace(/\n/g, '\\n')
+      return [{ key: endsLine ? 'explain.printLine' : 'explain.print', values: { text } }]
     }
   }
 }

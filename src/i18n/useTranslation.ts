@@ -1,5 +1,6 @@
-import type { ExampleProgram } from '../engine/types'
+import type { ExampleProgram, Phrase } from '../engine/types'
 import { useSettingsStore } from '../store/settingsStore'
+import { fill, formatPhrase } from './formatPhrase'
 import { translations, type TranslationKey } from './translations'
 
 /**
@@ -12,7 +13,12 @@ export function useTranslation() {
   const strings = translations[locale]
 
   function t(key: TranslationKey, values: Record<string, string | number> = {}) {
-    return strings[key].replace(/\{(\w+)\}/g, (_, name: string) => String(values[name]))
+    return fill(strings, key, values)
+  }
+
+  /** A step explanation or error text in the current language. Several sentences are joined with a space. */
+  function phrase(text: Phrase | Phrase[]) {
+    return (Array.isArray(text) ? text : [text]).map((p) => formatPhrase(strings, p)).join(' ')
   }
 
   /** An example's title or tag in the current language, e.g. "example.sum.title". Falls back to the data's English text. */
@@ -21,5 +27,5 @@ export function useTranslation() {
     return key in strings ? strings[key as TranslationKey] : example[field]
   }
 
-  return { t, exampleText, locale }
+  return { t, phrase, exampleText, locale }
 }

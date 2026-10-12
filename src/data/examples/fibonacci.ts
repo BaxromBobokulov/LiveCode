@@ -28,37 +28,39 @@ function buildFibonacciExample(): Step[] {
   const count = 10
 
   let a = 0
-  trace.step(4, 'Create a and set it to 0. a always holds the current Fibonacci number.', { set: { a } })
+  trace.step(4, { key: 'step.fibonacci.a' }, { set: { a } })
   let b = 1
-  trace.step(5, 'Create b and set it to 1. b always holds the number after a.', { set: { b } })
-  trace.step(6, 'Declare next. It will hold a + b. It has no value yet.', { set: { next: null } })
-  trace.step(7, 'Declare the loop counter i. It has no value yet.', { set: { i: null } })
+  trace.step(5, { key: 'step.fibonacci.b' }, { set: { b } })
+  trace.step(6, { key: 'step.fibonacci.next' }, { set: { next: null } })
+  trace.step(7, { key: 'step.declareCounter', values: { name: 'i' } }, { set: { i: null } })
 
   for (let i = 0; i < count; i++) {
     const loop = { line: 9, iteration: i + 1, total: count }
     trace.step(
       9,
       i === 0
-        ? `Start the loop: set i to 0. 0 < ${count} is true, so run the loop body.`
-        : `Increase i to ${i}. ${i} < ${count} is true, so run the loop body again.`,
+        ? { key: 'step.loopStart', values: { name: 'i', value: 0, condition: `0 < ${count}` } }
+        : { key: 'step.loopAgain', values: { name: 'i', value: i, condition: `${i} < ${count}` } },
       { set: { i }, loop },
     )
 
-    trace.step(10, `Print a (${a}) followed by a space.`, { print: `${a} `, loop })
+    trace.step(10, { key: 'step.printWithSpace', values: { name: 'a', value: a } }, { print: `${a} `, loop })
 
     const next = a + b
-    trace.step(11, `Add the two numbers: next = a + b = ${a} + ${b} = ${next}.`, { set: { next }, loop })
+    trace.step(11, { key: 'step.fibonacci.add', values: { a, b, next } }, { set: { next }, loop })
 
     a = b
-    trace.step(12, `Move forward one place: a takes b's value, ${a}.`, { set: { a }, loop })
+    trace.step(12, { key: 'step.fibonacci.moveA', values: { a } }, { set: { a }, loop })
 
     b = next
-    trace.step(13, `b takes next's value, ${b}. The next two numbers are now ${a} and ${b}.`, { set: { b }, loop })
+    trace.step(13, { key: 'step.fibonacci.moveB', values: { a, b } }, { set: { b }, loop })
   }
 
-  trace.step(9, `Increase i to ${count}. ${count} < ${count} is false, so the loop ends.`, { set: { i: count } })
-  trace.step(16, 'Print a line break to finish the output.', { print: '\n' })
-  trace.step(17, 'Return 0 from main. The program finished successfully.')
+  trace.step(9, { key: 'step.loopEnd', values: { name: 'i', value: count, condition: `${count} < ${count}` } }, {
+    set: { i: count },
+  })
+  trace.step(16, { key: 'step.printLineBreak' }, { print: '\n' })
+  trace.step(17, { key: 'explain.returnFromMain', values: { value: 0, name: 'main' } })
 
   return trace.steps
 }

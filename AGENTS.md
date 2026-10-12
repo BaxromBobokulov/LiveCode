@@ -151,6 +151,8 @@ CodeVision runs arbitrary user-typed C code through its own in-browser interpret
 
 `runUserCode` never throws to its caller and always returns `{ steps }` or `{ error }`. Programs are capped at 1000 steps so an infinite loop can't freeze the page.
 
+**Translation (UZ/EN/RU):** step explanations and error messages are translated like the rest of the UI. The engine and the example files never build finished sentences. They produce a `Phrase` (`src/engine/types.ts`): a translation key from `src/i18n/translations.ts` plus the values for its `{placeholders}`. This covers `explain.ts`, the `trace.step(...)` calls in `src/data/examples/`, and `CodeError`/`UnsupportedConstructError`. The UI puts a Phrase into words at render time with `phrase()` from `useTranslation()`, so switching language updates what is already on screen. Variable and array names, numbers and code fragments (`arr`, `i`, `4 + 8`) are passed in as values and stay untranslated. A new explanation or error template needs a key in all three languages. The example C code itself is not translated.
+
 **Run button behavior:** if the editor still holds a built-in example's code unchanged, Run replays that example's hand-authored trace exactly as before (fast, guaranteed-correct). The moment the code is edited, Run calls `runUserCode` instead.
 
 ---

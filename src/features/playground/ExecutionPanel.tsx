@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import type { Ref } from 'react'
 import Button from '../../components/Button'
 import ProgressBar from '../../components/ProgressBar'
-import { UnsupportedConstructError, type ErrorText } from '../../engine/errors'
+import { UnsupportedConstructError } from '../../engine/errors'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
 import ArrayVisualizer from './ArrayVisualizer'
@@ -18,7 +18,7 @@ function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
   const prev = usePlaygroundStore((state) => state.prev)
   const toggleAutoplay = usePlaygroundStore((state) => state.toggleAutoplay)
   const runError = usePlaygroundStore((state) => state.runError)
-  const { t } = useTranslation()
+  const { t, phrase } = useTranslation()
 
   const step = example.steps[stepIndex]
   const totalSteps = example.steps.length
@@ -28,13 +28,6 @@ function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
   const reduceMotion = useReducedMotion()
   const explanationClass = 'rounded-container border border-border bg-surface px-3.5 py-3 text-body-md text-text'
 
-  /** Puts an engine error text into words in the chosen language, including texts nested in its values. */
-  function errorText({ key, values = {} }: ErrorText): string {
-    const filled = Object.fromEntries(
-      Object.entries(values).map(([name, value]) => [name, typeof value === 'object' ? errorText(value) : value]),
-    )
-    return t(key, filled)
-  }
 
   return (
     <section ref={ref} className="flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel">
@@ -67,17 +60,17 @@ function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
           <div role="alert" className="rounded-container border border-error bg-errorTint px-3.5 py-3 text-body-md">
             <p className="font-semibold text-error">
               {runError instanceof UnsupportedConstructError
-                ? t('error.unsupported', { construct: errorText(runError.construct) })
+                ? t('error.unsupported', { construct: phrase(runError.construct) })
                 : t('error.codeError')}
               <span className="font-normal"> · {t('error.line', { line: runError.line })}</span>
             </p>
-            <p className="mt-1 text-textMuted">{errorText(runError.text)}</p>
+            <p className="mt-1 text-textMuted">{phrase(runError.text)}</p>
           </div>
         )}
 
         {reduceMotion ? (
           <p aria-live="polite" className={explanationClass}>
-            {step.explanation}
+            {phrase(step.explanation)}
           </p>
         ) : (
           // A new key each step remounts the box, so a fast step replaces the fade instead of queuing behind it
@@ -89,7 +82,7 @@ function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
             aria-live="polite"
             className={explanationClass}
           >
-            {step.explanation}
+            {phrase(step.explanation)}
           </motion.p>
         )}
 

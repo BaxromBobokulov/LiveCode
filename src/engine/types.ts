@@ -1,5 +1,14 @@
 // The contract between src/data/examples/ and every visualization component.
 // Changing the shape of Step means updating every example file in the same change.
+import type { TranslationKey } from '../i18n/translations'
+
+/**
+ * Text that the UI shows in the chosen language: a translation key plus the values for its
+ * "{name}" placeholders, e.g. { key: 'explain.assign', values: { target: 'sum', value: '4' } }.
+ * A value can itself be a Phrase, or a list of Phrases (shown as "a, b and c").
+ */
+export type Phrase = { key: TranslationKey; values?: Record<string, PhraseValue> }
+export type PhraseValue = string | number | Phrase | Phrase[]
 
 /** One variable as the Variables panel shows it. */
 export type Variable = {
@@ -57,8 +66,8 @@ export type Step = {
   loop: LoopInfo | null
   /** Everything printed to the console so far. */
   output: string
-  /** Plain-language description of what this line did. */
-  explanation: string
+  /** Plain-language description of what this line did, one Phrase per sentence. */
+  explanation: Phrase[]
 }
 
 export type ExampleProgram = {
