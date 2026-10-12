@@ -1,7 +1,10 @@
 import { animate, useReducedMotion } from 'framer-motion'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
+import { SPLIT_KEY_STEP, SPLIT_MAX, SPLIT_MIN } from '../../constants/layout'
 import { AUTOPLAY_DELAY_MS, RUN_SCROLL_DELAY_MS, RUN_SCROLL_DURATION_S } from '../../constants/playback'
+import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
+import { useSettingsStore } from '../../store/settingsStore'
 import EditorPanel from './EditorPanel'
 import ExecutionPanel from './ExecutionPanel'
 
@@ -38,6 +41,8 @@ function scrollToPanel(panel: HTMLElement): () => void {
   return cancel
 }
 
+type PanelId = 'editor' | 'execution'
+
 function PlaygroundScreen() {
   const isPlaying = usePlaygroundStore((state) => state.isPlaying)
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
@@ -47,6 +52,12 @@ function PlaygroundScreen() {
   const executionRef = useRef<HTMLElement>(null)
   const cancelScroll = useRef<(() => void) | null>(null)
   const reduceMotion = useReducedMotion()
+  const splitRatio = useSettingsStore((state) => state.splitRatio)
+  const setSplitRatio = useSettingsStore((state) => state.setSplitRatio)
+  // The panel expanded to the full width, if any. Not saved: a reload shows both panels again.
+  const [maximized, setMaximized] = useState<PanelId | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const { t } = useTranslation()
 
   // Auto Play: move one step forward after a short pause, until the store stops playing.
   useEffect(() => {
@@ -65,15 +76,90 @@ function PlaygroundScreen() {
     // Execution panel sits under the editor. Bring it into view so Run visibly does something.
     const layout = layoutRef.current
     const panel = executionRef.current
-    if (!layout || !panel || getComputedStyle(layout).flexDirection !== 'column') return
+    // Skipped while the editor is expanded: the Execution panel is hidden then.
+    if (maximized || !layout || !panel || getComputedStyle(layout).flexDirection !== 'column') return
     if (reduceMotion) panel.scrollIntoView({ block: 'start' })
     else cancelScroll.current = scrollToPanel(panel)
   }
 
+  function toggleMaximize(panel: PanelId) {
+    setMaximized((current) => (current === panel ? null : panel))
+  }
+
+  // Dragging the divider: pointer capture keeps the moves coming even when the pointer leaves it.
+  function handleDividerPointerDown(event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return
+    event.preventDefault() // no text selection while dragging
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setIsDragging(true)
+  }
+
+  function handleDividerPointerMove(event: PointerEvent<HTMLButtonElement>) {
+    const layout = layoutRef.current
+    if (!layout || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+    const box = layout.getBoundingClientRect()
+    const dividerWidth = event.currentTarget.offsetWidth
+    // The divider's centre follows the pointer; the store keeps both panels at least SPLIT_MIN wide.
+    setSplitRatio((event.clientX - box.left - dividerWidth / 2) / (box.width - dividerWidth))
+  }
+
+  function handleDividerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const targets: Record<string, number> = {
+      ArrowLeft: splitRatio - SPLIT_KEY_STEP,
+      ArrowRight: splitRatio + SPLIT_KEY_STEP,
+      Home: SPLIT_MIN,
+      End: SPLIT_MAX,
+    }
+    if (!(event.key in targets)) return
+    event.preventDefault() // don't scroll the page
+    setSplitRatio(Math.round(targets[event.key] * 100) / 100) // 0.45, not 0.44999999999999996
+  }
+
+  // Side by side (min-[1000px]), the editor takes --editor-share of the width left over by the
+  // 20px (w-5) divider and the Execution panel (flex-1) takes the rest. Stacked, both are full width.
+  const editorSplitClass =
+    'min-[1000px]:flex-none min-[1000px]:basis-[calc((100%_-_20px)_*_var(--editor-share))]'
+
   return (
-    <div ref={layoutRef} className="flex flex-col gap-5 min-[1000px]:flex-row">
-      <EditorPanel onRun={handleRun} />
-      <ExecutionPanel ref={executionRef} />
+    <div
+      ref={layoutRef}
+      style={{ '--editor-share': splitRatio } as CSSProperties}
+      className={`flex flex-col gap-5 min-[1000px]:flex-row min-[1000px]:gap-0 ${isDragging ? 'select-none' : ''}`}
+    >
+      <EditorPanel
+        onRun={handleRun}
+        isMaximized={maximized === 'editor'}
+        onToggleMaximize={() => toggleMaximize('editor')}
+        className={maximized === 'execution' ? 'hidden' : maximized === null ? editorSplitClass : ''}
+      />
+
+      {/* Only side by side, and only while both panels show. A real <button>, so it can take focus. */}
+      {maximized === null && (
+        <button
+          type="button"
+          aria-label={t('layout.resize')}
+          title={t('layout.resize')}
+          onPointerDown={handleDividerPointerDown}
+          onPointerMove={handleDividerPointerMove}
+          onLostPointerCapture={() => setIsDragging(false)}
+          onKeyDown={handleDividerKeyDown}
+          className="group hidden w-5 shrink-0 cursor-col-resize touch-none justify-center rounded-control focus-visible:outline-2 focus-visible:outline-accent min-[1000px]:flex"
+        >
+          {/* The grip stays in the middle of the screen while the page scrolls, within the divider. */}
+          <span
+            className={`sticky top-1/2 my-2 h-10 w-1 rounded-full transition-colors ${
+              isDragging ? 'bg-accent' : 'bg-textMuted group-hover:bg-accent group-focus-visible:bg-accent'
+            }`}
+          />
+        </button>
+      )}
+
+      <ExecutionPanel
+        ref={executionRef}
+        isMaximized={maximized === 'execution'}
+        onToggleMaximize={() => toggleMaximize('execution')}
+        className={maximized === 'editor' ? 'hidden' : ''}
+      />
     </div>
   )
 }

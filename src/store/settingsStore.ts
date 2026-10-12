@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN } from '../constants/layout'
 import { track } from '../lib/analytics'
 
 export type Theme = 'light' | 'dark'
@@ -6,10 +7,12 @@ export type Locale = 'en' | 'uz' | 'ru'
 
 export const locales: Locale[] = ['uz', 'en', 'ru']
 
-// Theme and language are the only things CodeVision saves between visits (AGENTS.md § State Management Rules).
+// Theme, language and the Playground split are the only things CodeVision saves between visits
+// (AGENTS.md § State Management Rules).
 // index.html reads the same theme key before the first paint, so keep the two in sync.
 const THEME_KEY = 'codevision.theme'
 const LOCALE_KEY = 'codevision.locale'
+const SPLIT_KEY = 'codevision.splitRatio'
 
 // localStorage can throw (private mode, blocked site data), so reading and writing never break the app.
 function load(key: string): string | null {
@@ -43,6 +46,17 @@ function initialLocale(): Locale {
   return locales.includes(browserLanguage as Locale) ? (browserLanguage as Locale) : 'en'
 }
 
+/** Keeps both Playground panels at least SPLIT_MIN wide. */
+function clampSplit(ratio: number): number {
+  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio))
+}
+
+/** The saved split between the Code and Execution panels, or an even split on a first visit. */
+function initialSplitRatio(): number {
+  const saved = parseFloat(load(SPLIT_KEY) ?? '') // NaN when nothing (or garbage) was saved
+  return Number.isFinite(saved) ? clampSplit(saved) : SPLIT_DEFAULT
+}
+
 // src/theme/colors.css swaps every color token on this attribute.
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme
@@ -55,8 +69,11 @@ function applyLocale(locale: Locale) {
 type SettingsState = {
   theme: Theme
   locale: Locale
+  /** The Code panel's share of the width when the panels sit side by side. */
+  splitRatio: number
   toggleTheme: () => void
   setLocale: (locale: Locale) => void
+  setSplitRatio: (ratio: number) => void
 }
 
 export const useSettingsStore = create<SettingsState>()((set, get) => {
@@ -68,6 +85,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
   return {
     theme,
     locale,
+    splitRatio: initialSplitRatio(),
 
     toggleTheme: () => {
       const next = get().theme === 'light' ? 'dark' : 'light'
@@ -82,6 +100,12 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
       save(LOCALE_KEY, next)
       set({ locale: next })
       track('language_changed', { language: next })
+    },
+
+    setSplitRatio: (ratio) => {
+      const next = clampSplit(ratio)
+      save(SPLIT_KEY, String(next))
+      set({ splitRatio: next })
     },
   }
 })

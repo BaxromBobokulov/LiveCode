@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import type { Ref } from 'react'
 import Button from '../../components/Button'
+import MaximizeButton from '../../components/MaximizeButton'
 import ProgressBar from '../../components/ProgressBar'
 import { UnsupportedConstructError } from '../../engine/errors'
 import { useTranslation } from '../../i18n/useTranslation'
@@ -10,7 +11,16 @@ import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
 import VariablesPanel from './VariablesPanel'
 
-function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
+type ExecutionPanelProps = {
+  ref?: Ref<HTMLElement>
+  /** Whether this panel is expanded to the full width; `onToggleMaximize` flips it. */
+  isMaximized: boolean
+  onToggleMaximize: () => void
+  /** Sizing from PlaygroundScreen (the resizable split). */
+  className?: string
+}
+
+function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: ExecutionPanelProps) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const isPlaying = usePlaygroundStore((state) => state.isPlaying)
@@ -30,12 +40,22 @@ function ExecutionPanel({ ref }: { ref?: Ref<HTMLElement> }) {
 
 
   return (
-    <section ref={ref} className="flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel">
+    <section
+      ref={ref}
+      className={`flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel ${className}`}
+    >
       <header className="flex h-11.75 items-center justify-between border-b border-border px-4.5">
         <h2 className="text-body-md font-semibold">{t('panel.execution')}</h2>
-        <span className="text-body-sm font-semibold text-textMuted">
-          {t('execution.stepOf', { current: stepIndex + 1, total: totalSteps })}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-body-sm font-semibold text-textMuted">
+            {t('execution.stepOf', { current: stepIndex + 1, total: totalSteps })}
+          </span>
+          <MaximizeButton
+            isMaximized={isMaximized}
+            label={isMaximized ? t('layout.restore') : t('layout.expandExecution')}
+            onClick={onToggleMaximize}
+          />
+        </div>
       </header>
 
       <div className="flex flex-col gap-4.5 p-4.5">

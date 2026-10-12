@@ -21,6 +21,10 @@ const en = {
   'button.pause': 'Pause',
 
   'editor.language': 'Programming language',
+  'layout.resize': 'Resize panels. Use the left and right arrow keys.',
+  'layout.expandEditor': 'Expand the code editor',
+  'layout.expandExecution': 'Expand the Execution panel',
+  'layout.restore': 'Restore the split view',
 
   'panel.execution': 'Execution',
   'panel.variables': 'Variables',
@@ -325,6 +329,10 @@ const uz: Record<TranslationKey, string> = {
   'button.pause': 'Pauza',
 
   'editor.language': 'Dasturlash tili',
+  'layout.resize': "Panellar o'lchamini o'zgartirish. Chap va o'ng strelka tugmalaridan foydalaning.",
+  'layout.expandEditor': 'Kod muharririni kengaytirish',
+  'layout.expandExecution': 'Bajarilish panelini kengaytirish',
+  'layout.restore': "Ikki panelli ko'rinishga qaytarish",
 
   'panel.execution': 'Bajarilish',
   'panel.variables': "O'zgaruvchilar",
@@ -633,6 +641,10 @@ const ru: Record<TranslationKey, string> = {
   'button.pause': 'Пауза',
 
   'editor.language': 'Язык программирования',
+  'layout.resize': 'Изменить размер панелей. Используйте стрелки влево и вправо.',
+  'layout.expandEditor': 'Развернуть редактор кода',
+  'layout.expandExecution': 'Развернуть панель выполнения',
+  'layout.restore': 'Вернуть разделённый вид',
 
   'panel.execution': 'Выполнение',
   'panel.variables': 'Переменные',

@@ -4,6 +4,7 @@ import CodeMirror, { Prec, keymap, lineNumbers } from '@uiw/react-codemirror'
 import { useMemo } from 'react'
 import Button from '../../components/Button'
 import Chip from '../../components/Chip'
+import MaximizeButton from '../../components/MaximizeButton'
 import Select from '../../components/Select'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
@@ -18,8 +19,17 @@ const languages = [
   { value: 'java', label: 'Java', disabled: true },
 ]
 
-/** `onRun` is called when the Run button is pressed. */
-function EditorPanel({ onRun }: { onRun: () => void }) {
+type EditorPanelProps = {
+  /** Called when the Run button is pressed. */
+  onRun: () => void
+  /** Whether this panel is expanded to the full width; `onToggleMaximize` flips it. */
+  isMaximized: boolean
+  onToggleMaximize: () => void
+  /** Sizing from PlaygroundScreen (the resizable split). */
+  className?: string
+}
+
+function EditorPanel({ onRun, isMaximized, onToggleMaximize, className = '' }: EditorPanelProps) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const reset = usePlaygroundStore((state) => state.reset)
@@ -47,18 +57,23 @@ function EditorPanel({ onRun }: { onRun: () => void }) {
   )
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-panel">
+    <section className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-panel ${className}`}>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4.5 py-3.5">
         <div className="flex min-w-0 items-center gap-2.5">
           <h2 className="truncate text-body-md font-semibold">{exampleText(example, 'title')}</h2>
           <Chip>{step.scope}</Chip>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select className="w-36.5" aria-label={t('editor.language')} defaultValue="c" options={languages} />
           <Button variant="secondary" onClick={reset}>
             {t('button.reset')}
           </Button>
           <Button onClick={onRun}>{t('button.run')}</Button>
+          <MaximizeButton
+            isMaximized={isMaximized}
+            label={isMaximized ? t('layout.restore') : t('layout.expandEditor')}
+            onClick={onToggleMaximize}
+          />
         </div>
       </header>
 
