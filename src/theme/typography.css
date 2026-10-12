@@ -40,6 +40,13 @@
   --text-body-md--line-height: 22px;
   --text-body-md--font-weight: 400;
 
+  /* Explanation — the step explanation box. Larger and airier than body text for easier reading;
+     the size is the reader's choice (A− / A+ in the navbar, src/store/settingsStore.ts), 15px by default.
+     The line height is relative so it scales with the size. */
+  --text-explanation: var(--explanation-size, 15px);
+  --text-explanation--line-height: 1.7;
+  --text-explanation--font-weight: 400;
+
   /* Body Small — Buttons, step counter */
   --text-body-sm: 13px;
   --text-body-sm--line-height: 20px;

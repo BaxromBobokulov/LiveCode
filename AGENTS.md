@@ -203,7 +203,7 @@ Otherwise, always stick to Tailwind utilities.
 
 ## State Management Rules
 
-Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, and the Code/Execution split ratio.
+Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, the Code/Execution split ratio, and the step explanation's text size (the A− / A+ buttons in the navbar).
 
 ---
 

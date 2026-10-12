@@ -1,6 +1,6 @@
 import type { ExampleProgram, Phrase } from '../engine/types'
 import { useSettingsStore } from '../store/settingsStore'
-import { fill, formatPhrase } from './formatPhrase'
+import { fill, formatPhrase, phraseParts as formatParts, type PhrasePart } from './formatPhrase'
 import { translations, type TranslationKey } from './translations'
 
 /**
@@ -21,11 +21,16 @@ export function useTranslation() {
     return (Array.isArray(text) ? text : [text]).map((p) => formatPhrase(strings, p)).join(' ')
   }
 
+  /** The same as phrase(), split into prose and code parts so the UI can style the code. */
+  function phraseParts(text: Phrase | Phrase[]): PhrasePart[] {
+    return (Array.isArray(text) ? text : [text]).flatMap((p, i) => [...(i > 0 ? [' '] : []), ...formatParts(strings, p)])
+  }
+
   /** An example's title or tag in the current language, e.g. "example.sum.title". Falls back to the data's English text. */
   function exampleText(example: ExampleProgram, field: 'title' | 'tag') {
     const key = `example.${example.id}.${field}`
     return key in strings ? strings[key as TranslationKey] : example[field]
   }
 
-  return { t, phrase, exampleText, locale }
+  return { t, phrase, phraseParts, exampleText, locale }
 }

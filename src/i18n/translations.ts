@@ -12,6 +12,9 @@ const en = {
   'settings.language': 'Language',
   'settings.toDark': 'Switch to dark theme',
   'settings.toLight': 'Switch to light theme',
+  'settings.textSize': 'Explanation text size',
+  'settings.textSmaller': 'Smaller explanation text',
+  'settings.textLarger': 'Larger explanation text',
 
   'button.run': 'Run',
   'button.reset': 'Reset',
@@ -320,6 +323,9 @@ const uz: Record<TranslationKey, string> = {
   'settings.language': 'Til',
   'settings.toDark': "Tungi mavzuga o'tish",
   'settings.toLight': "Kunduzgi mavzuga o'tish",
+  'settings.textSize': "Izoh matni o'lchami",
+  'settings.textSmaller': 'Izoh matnini kichraytirish',
+  'settings.textLarger': 'Izoh matnini kattalashtirish',
 
   'button.run': 'Ishga tushirish',
   'button.reset': 'Qaytarish',
@@ -632,6 +638,9 @@ const ru: Record<TranslationKey, string> = {
   'settings.language': 'Язык',
   'settings.toDark': 'Включить тёмную тему',
   'settings.toLight': 'Включить светлую тему',
+  'settings.textSize': 'Размер текста пояснения',
+  'settings.textSmaller': 'Уменьшить текст пояснения',
+  'settings.textLarger': 'Увеличить текст пояснения',
 
   'button.run': 'Запустить',
   'button.reset': 'Сбросить',

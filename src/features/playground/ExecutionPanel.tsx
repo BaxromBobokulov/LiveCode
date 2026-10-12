@@ -4,6 +4,7 @@ import Button from '../../components/Button'
 import MaximizeButton from '../../components/MaximizeButton'
 import ProgressBar from '../../components/ProgressBar'
 import { UnsupportedConstructError } from '../../engine/errors'
+import type { PhrasePart } from '../../i18n/formatPhrase'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
 import ArrayVisualizer from './ArrayVisualizer'
@@ -20,6 +21,22 @@ type ExecutionPanelProps = {
   className?: string
 }
 
+/** A translated sentence with its code tokens (names, numbers, expressions) in the mono font, so they stand out from the prose. */
+function PhraseText({ parts }: { parts: PhrasePart[] }) {
+  return parts.map((part, i) =>
+    typeof part === 'string' ? (
+      part
+    ) : (
+      <code
+        key={i}
+        className="rounded-control bg-accentTint px-1 py-0.5 font-mono text-accentText box-decoration-clone"
+      >
+        {part.code}
+      </code>
+    ),
+  )
+}
+
 function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: ExecutionPanelProps) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
@@ -28,7 +45,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const prev = usePlaygroundStore((state) => state.prev)
   const toggleAutoplay = usePlaygroundStore((state) => state.toggleAutoplay)
   const runError = usePlaygroundStore((state) => state.runError)
-  const { t, phrase } = useTranslation()
+  const { t, phrase, phraseParts } = useTranslation()
 
   const step = example.steps[stepIndex]
   const totalSteps = example.steps.length
@@ -36,8 +53,8 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const stepKey = `${example.id}-${stepIndex}`
   // Framer's reducedMotion="user" still fades opacity/colors, so skip these animations ourselves
   const reduceMotion = useReducedMotion()
-  const explanationClass = 'rounded-container border border-border bg-surface px-3.5 py-3 text-body-md text-text'
-
+  // text-explanation follows the reader's A− / A+ choice (settingsStore)
+  const explanationClass = 'rounded-container border border-border bg-surface px-4.5 py-4 text-explanation text-text'
 
   return (
     <section
@@ -84,13 +101,15 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
                 : t('error.codeError')}
               <span className="font-normal"> · {t('error.line', { line: runError.line })}</span>
             </p>
-            <p className="mt-1 text-textMuted">{phrase(runError.text)}</p>
+            <p className="mt-1 text-textMuted">
+              <PhraseText parts={phraseParts(runError.text)} />
+            </p>
           </div>
         )}
 
         {reduceMotion ? (
           <p aria-live="polite" className={explanationClass}>
-            {phrase(step.explanation)}
+            <PhraseText parts={phraseParts(step.explanation)} />
           </p>
         ) : (
           // A new key each step remounts the box, so a fast step replaces the fade instead of queuing behind it
@@ -102,7 +121,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
             aria-live="polite"
             className={explanationClass}
           >
-            {phrase(step.explanation)}
+            <PhraseText parts={phraseParts(step.explanation)} />
           </motion.p>
         )}
 

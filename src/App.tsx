@@ -2,6 +2,7 @@ import { MotionConfig } from 'framer-motion'
 import LanguageSwitcher from './components/LanguageSwitcher'
 import LogoMark from './components/LogoMark'
 import Tabs from './components/Tabs'
+import TextSizeControl from './components/TextSizeControl'
 import ThemeToggle from './components/ThemeToggle'
 import ExamplesScreen from './features/examples/ExamplesScreen'
 import LearnScreen from './features/learn/LearnScreen'
@@ -35,6 +36,7 @@ function App() {
             <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
             <div className="flex items-center gap-2">
               <LanguageSwitcher />
+              <TextSizeControl />
               <ThemeToggle />
             </div>
           </div>
