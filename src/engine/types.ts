@@ -25,6 +25,8 @@ export type ArrayView = {
   activeIndex: number | null
   /** A second element in use on this line, e.g. the other half of a swap. Highlighted like activeIndex. */
   secondIndex?: number
+  /** A char array: `values` are character codes, drawn as characters (see charText). */
+  chars?: true
 }
 
 /** One cell of a 2D array: grid[row][col]. */
@@ -37,11 +39,26 @@ export type GridView = {
   values: number[][]
   /** Cell the current line reads or writes, or null when no cell is in use. */
   activeIndex: GridCell | null
+  /** A 2D char array: `values` are character codes, drawn as characters (see charText). */
+  chars?: true
 }
 
 /** Tells a 2D array view apart from a 1D one. */
 export function isGridView(view: ArrayView | GridView): view is GridView {
   return Array.isArray(view.values[0])
+}
+
+/**
+ * How one character of a char array is written, without quotes: "A", or an escape for the
+ * characters that can't be seen, e.g. "\0" for the 0 that marks the end of a string.
+ */
+export function charText(code: number): string {
+  if (code === 0) return '\\0'
+  if (code === 10) return '\\n'
+  if (code === 39) return "\\'"
+  if (code === 92) return '\\\\'
+  if (code >= 32 && code <= 126) return String.fromCharCode(code)
+  return String(code)
 }
 
 /** Progress through the loop the current line belongs to. */

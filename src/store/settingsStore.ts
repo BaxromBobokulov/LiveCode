@@ -11,13 +11,18 @@ export const locales: Locale[] = ['uz', 'en', 'ru']
 export const explanationSizes = [14, 15, 16, 18, 20]
 const EXPLANATION_SIZE_DEFAULT = 15
 
-// Theme, language, the Playground split and the explanation text size are the only things CodeVision saves between visits
+/** Auto Play speeds offered next to the step controls: 2 means twice as fast as the base AUTOPLAY_DELAY_MS. */
+export const playbackSpeeds = [0.5, 1, 1.5, 2]
+const PLAYBACK_SPEED_DEFAULT = 1
+
+// Theme, language, the Playground split, the explanation text size and the Auto Play speed are the only things CodeVision saves between visits
 // (AGENTS.md § State Management Rules).
 // index.html reads the same theme key before the first paint, so keep the two in sync.
 const THEME_KEY = 'codevision.theme'
 const LOCALE_KEY = 'codevision.locale'
 const SPLIT_KEY = 'codevision.splitRatio'
 const EXPLANATION_SIZE_KEY = 'codevision.explanationSize'
+const PLAYBACK_SPEED_KEY = 'codevision.playbackSpeed'
 
 // localStorage can throw (private mode, blocked site data), so reading and writing never break the app.
 function load(key: string): string | null {
@@ -68,6 +73,12 @@ function initialExplanationSize(): number {
   return explanationSizes.includes(saved) ? saved : EXPLANATION_SIZE_DEFAULT
 }
 
+/** The saved Auto Play speed, if it is one of the offered speeds. */
+function initialPlaybackSpeed(): number {
+  const saved = Number(load(PLAYBACK_SPEED_KEY))
+  return playbackSpeeds.includes(saved) ? saved : PLAYBACK_SPEED_DEFAULT
+}
+
 // src/theme/colors.css swaps every color token on this attribute.
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme
@@ -89,11 +100,14 @@ type SettingsState = {
   splitRatio: number
   /** Font size (px) of the step explanation, one of explanationSizes. */
   explanationSize: number
+  /** Auto Play speed multiplier, one of playbackSpeeds. */
+  playbackSpeed: number
   toggleTheme: () => void
   setLocale: (locale: Locale) => void
   setSplitRatio: (ratio: number) => void
   /** Moves the explanation text one size up (+1) or down (-1), staying within explanationSizes. */
   stepExplanationSize: (direction: 1 | -1) => void
+  setPlaybackSpeed: (speed: number) => void
 }
 
 export const useSettingsStore = create<SettingsState>()((set, get) => {
@@ -109,6 +123,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
     locale,
     splitRatio: initialSplitRatio(),
     explanationSize,
+    playbackSpeed: initialPlaybackSpeed(),
 
     toggleTheme: () => {
       const next = get().theme === 'light' ? 'dark' : 'light'
@@ -138,6 +153,12 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
       applyExplanationSize(next)
       save(EXPLANATION_SIZE_KEY, String(next))
       set({ explanationSize: next })
+    },
+
+    setPlaybackSpeed: (speed) => {
+      if (!playbackSpeeds.includes(speed)) return
+      save(PLAYBACK_SPEED_KEY, String(speed))
+      set({ playbackSpeed: speed })
     },
   }
 })

@@ -1,12 +1,13 @@
 import { CodeError, UnsupportedConstructError, code, scanfReadError } from './errors'
 import { tokenize, type Token } from './lexer'
-import type { Phrase } from './types'
+import { charText, type Phrase } from './types'
 
 // ---------------------------------------------------------------------------
 // AST — every node carries the 1-based source line it came from.
 // ---------------------------------------------------------------------------
 
-export type NumType = 'int' | 'float'
+/** The value types. A char is a small whole number too: the code of one character, e.g. 65 for 'A'. */
+export type NumType = 'int' | 'float' | 'char'
 
 export type BinaryOp = '||' | '&&' | '==' | '!=' | '<' | '>' | '<=' | '>=' | '+' | '-' | '*' | '/' | '%'
 
@@ -19,6 +20,8 @@ export type Expr =
   | { kind: 'unary'; line: number; op: '-' | '!'; operand: Expr }
   | { kind: 'binary'; line: number; op: BinaryOp; left: Expr; right: Expr }
   | { kind: 'call'; line: number; name: string; args: Expr[] }
+  /** A "text" literal. Only allowed where text is expected, e.g. as a printf or puts argument. */
+  | { kind: 'string'; line: number; value: string }
 
 /** Something that can be assigned to: `x`, `arr[i]` or `grid[i][j]`. */
 export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' }>
@@ -37,19 +40,22 @@ export type Declarator = {
   arrayInit: Expr[] | null
   /** `= {{a, b}, {c, d}}` for a 2D array, one list per row. */
   gridInit: Expr[][] | null
+  /** `= "hello"` for a char array. */
+  stringInit: string | null
 }
-
-/** A printf argument: a value, or a text string for %s. */
-export type PrintfArg = Expr | { kind: 'text'; line: number; value: string }
 
 export type Stmt =
   | { kind: 'declare'; line: number; type: NumType; declarators: Declarator[] }
   | { kind: 'assign'; line: number; target: Target; op: '=' | '+=' | '-=' | '*=' | '/=' | '%='; value: Expr }
   | { kind: 'update'; line: number; target: Target; op: '++' | '--' }
   | { kind: 'expr'; line: number; expr: Expr }
-  | { kind: 'printf'; line: number; format: string; args: PrintfArg[] }
-  /** `scanf("%d %f", &a, &b)`: each read takes the next value from the Input field, left to right. */
-  | { kind: 'scanf'; line: number; reads: { specifier: 'd' | 'f'; target: Target }[] }
+  /** `isPuts` marks a `puts(...)`, which runs as `printf("%s\n", ...)` but names puts in its errors. */
+  | { kind: 'printf'; line: number; format: string; args: Expr[]; isPuts?: true }
+  /**
+   * `scanf("%d %f", &a, &b)`: each read takes the next value from the Input field, left to right.
+   * `%s` reads one word into a char array: `scanf("%s", name)`.
+   */
+  | { kind: 'scanf'; line: number; reads: { specifier: 'd' | 'f' | 's'; target: Target }[] }
   | { kind: 'if'; line: number; cond: Expr; then: Stmt; otherwise: Stmt | null }
   | { kind: 'while'; line: number; cond: Expr; body: Stmt }
   | { kind: 'for'; line: number; init: Stmt | null; cond: Expr | null; update: Stmt | null; body: Stmt }
@@ -117,12 +123,24 @@ export function toSource(expr: Expr): string {
     }
     case 'call':
       return `${expr.name}(${expr.args.map(toSource).join(', ')})`
+    case 'string':
+      return quoteText(expr.value)
   }
 }
 
-/** Formats a number for display: ints as-is, floats always with a decimal point ("2.0", "3.14"). */
+/** Text as it would be written in C, in double quotes: "hi\n". */
+export function quoteText(text: string): string {
+  return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+}
+
+/** Formats a value for display: ints as-is, floats always with a decimal point ("2.0", "3.14"), chars in quotes ('A'). */
 export function formatNumber(value: number, type: NumType): string {
   if (type === 'int') return String(value)
+  if (type === 'char') {
+    // A character that can't be written in quotes (charText gave back its code) is shown as a number.
+    const text = charText(value)
+    return text === String(value) ? text : `'${text}'`
+  }
   if (!Number.isFinite(value)) return String(value)
   const text = String(Number(value.toPrecision(7)))
   return /[.e]/.test(text) ? text : `${text}.0`
@@ -132,18 +150,17 @@ export function formatNumber(value: number, type: NumType): string {
 // Unsupported constructs
 // ---------------------------------------------------------------------------
 
-const onlyIntFloat: Phrase = { key: 'unsupported.onlyIntFloat' }
+const onlyBasicTypes: Phrase = { key: 'unsupported.onlyBasicTypes' }
 const switchStatement: [Phrase, Phrase] = [{ key: 'construct.switch' }, { key: 'unsupported.switch' }]
 const qualifier = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.qualifier', values: { keyword } }]
 const notYet = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.keyword', values: { keyword } }]
 
 const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> = {
-  char: [code('char'), { key: 'unsupported.charType' }],
   double: [code('double'), { key: 'unsupported.doubleType' }],
-  long: [code('long'), onlyIntFloat],
-  short: [code('short'), onlyIntFloat],
-  unsigned: [code('unsigned'), onlyIntFloat],
-  signed: [code('signed'), onlyIntFloat],
+  long: [code('long'), onlyBasicTypes],
+  short: [code('short'), onlyBasicTypes],
+  unsigned: [code('unsigned'), onlyBasicTypes],
+  signed: [code('signed'), onlyBasicTypes],
   struct: [code('struct'), { key: 'unsupported.struct' }],
   union: [code('union'), { key: 'unsupported.union' }],
   enum: [code('enum'), { key: 'unsupported.enum' }],
@@ -238,7 +255,7 @@ export function parse(source: string): Program {
     pos++
     return true
   }
-  const isType = (offset = 0) => is('int', offset) || is('float', offset)
+  const isType = (offset = 0) => is('int', offset) || is('float', offset) || is('char', offset)
 
   function expect(text: string): Token {
     if (is(text)) return advance()
@@ -439,6 +456,7 @@ export function parse(source: string): Program {
         init: null,
         arrayInit: null,
         gridInit: null,
+        stringInit: null,
       }
       if (accept('[')) {
         declarator.isArray = true
@@ -455,17 +473,24 @@ export function parse(source: string): Program {
       }
 
       if (accept('=')) {
-        if (declarator.isArray) {
-          if (peek().kind === 'string') throw stringError(peek().line)
-          if (declarator.columns) declarator.gridInit = parseGridInit(nameToken.text)
+        const name = nameToken.text
+        if (peek().kind === 'string') {
+          // Text goes into a 1D char array: char name[] = "hello";
+          if (type !== 'char') throw new CodeError(peek().line, 'codeError.stringIntoNonChar', { name, type })
+          if (!declarator.isArray) throw new CodeError(peek().line, 'codeError.stringIntoChar', { name })
+          if (declarator.columns) throw stringError(peek().line)
+          declarator.stringInit = advance().text
+        } else if (declarator.isArray) {
+          if (declarator.columns) declarator.gridInit = parseGridInit(name)
           else declarator.arrayInit = parseInitList()
         } else {
-          if (is('{')) throw new CodeError(peek().line, 'codeError.notArrayInit', { name: nameToken.text })
+          if (is('{')) throw new CodeError(peek().line, 'codeError.notArrayInit', { name })
           declarator.init = parseExpression()
         }
       }
 
-      if (declarator.isArray && !declarator.size && !declarator.arrayInit && !declarator.gridInit) {
+      const hasInit = declarator.arrayInit || declarator.gridInit || declarator.stringInit !== null
+      if (declarator.isArray && !declarator.size && !hasInit) {
         throw new CodeError(nameToken.line, 'codeError.arraySize', { name: nameToken.text })
       }
       declarators.push(declarator)
@@ -519,6 +544,7 @@ export function parse(source: string): Program {
       if (is('++') || is('--')) return { kind: 'update', line, target, op: advance().text as '++' | '--' }
       if (peek().kind === 'punct' && assignmentOps.includes(peek().text)) {
         const op = advance().text as Extract<Stmt, { kind: 'assign' }>['op']
+        if (peek().kind === 'string') throw new CodeError(line, 'codeError.assignString', { name: target.name })
         return { kind: 'assign', line, target, op, value: parseExpression() }
       }
       if (peek().kind === 'punct' && bitwiseAssignmentOps.includes(peek().text)) rejectUnsupportedOperator(peek())
@@ -556,16 +582,8 @@ export function parse(source: string): Program {
     }
     advance()
 
-    const args: PrintfArg[] = []
-    while (accept(',')) {
-      const token = peek()
-      if (token.kind === 'string') {
-        advance()
-        args.push({ kind: 'text', line: token.line, value: token.text })
-      } else {
-        args.push(parseExpression())
-      }
-    }
+    const args: Expr[] = []
+    while (accept(',')) args.push(parseText())
     expect(')')
     expect(';')
 
@@ -574,27 +592,40 @@ export function parse(source: string): Program {
       throw new CodeError(line, 'codeError.printfCount', { placeholders: specifiers.length, given: args.length })
     }
     specifiers.forEach((specifier, i) => {
-      const isText = args[i].kind === 'text'
-      if (specifier === 's' && !isText) throw new CodeError(line, 'codeError.printfS')
-      if (specifier !== 's' && isText) throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
+      const kind = args[i].kind
+      // %s prints text: a "string" or a char array, named on its own (which one is checked when it runs).
+      if (specifier === 's' && kind !== 'string' && kind !== 'var') throw new CodeError(line, 'codeError.printfS')
+      if (specifier !== 's' && kind === 'string') throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
     })
 
     return { kind: 'printf', line, format: formatToken.text, args }
   }
 
-  /** `puts("text");` is read as `printf("%s\n", "text");`, so it prints the text as-is and ends the line. */
+  /** A "string" literal where text is allowed, or else an ordinary expression. */
+  function parseText(): Expr {
+    const token = peek()
+    if (token.kind !== 'string') return parseExpression()
+    advance()
+    return { kind: 'string', line: token.line, value: token.text }
+  }
+
+  /**
+   * `puts("text");` or `puts(name);` is read as `printf("%s\n", ...);`, so it prints the text
+   * (or the char array's text) as-is and ends the line.
+   */
   function parsePuts(): Stmt {
     const line = advance().line // puts
     expect('(')
-    const textToken = peek()
-    if (textToken.kind !== 'string') throw new CodeError(textToken.line, 'codeError.putsText')
-    advance()
+    const token = peek()
+    const isArrayName = token.kind === 'identifier' && (is(')', 1) || is(';', 1))
+    if (token.kind !== 'string' && !isArrayName) throw new CodeError(token.line, 'codeError.putsText')
+    const arg = parseText()
     expect(')')
     expect(';')
-    return { kind: 'printf', line, format: '%s\n', args: [{ kind: 'text', line, value: textToken.text }] }
+    return { kind: 'printf', line, format: '%s\n', args: [arg], isPuts: true }
   }
 
-  /** `scanf("%d %f", &a, &b);` — one %d or %f placeholder per variable, each read in turn. */
+  /** `scanf("%d %f", &a, &b);` — one %d, %f or %s placeholder per variable, each read in turn. */
   function parseScanf(): Stmt {
     const line = advance().line // scanf
     expect('(')
@@ -602,13 +633,24 @@ export function parse(source: string): Program {
     if (formatToken.kind !== 'string') throw new CodeError(formatToken.line, 'codeError.scanfFormat')
     advance()
 
-    const specifiers = readFormatSpecifiers(formatToken.text, line, 'scanf') as ('d' | 'f')[]
+    const specifiers = readFormatSpecifiers(formatToken.text, line, 'scanf') as ('d' | 'f' | 's')[]
     if (specifiers.length === 0) throw new CodeError(line, 'codeError.scanfFormat')
 
     const targets: Target[] = []
     while (accept(',')) {
+      const position = targets.length + 1
+      // %s fills a whole char array, which is passed by its name alone: scanf("%s", name)
+      if (specifiers[targets.length] === 's') {
+        const token = peek()
+        const name = is('&') ? peek(1).text : token.text
+        if (token.kind !== 'identifier' || !(is(',', 1) || is(')', 1))) {
+          throw scanfReadError(token.line, position, specifiers.length, 'codeError.scanfSTarget', { name })
+        }
+        targets.push({ kind: 'var', line: advance().line, name })
+        continue
+      }
       if (!accept('&')) {
-        throw scanfReadError(peek().line, targets.length + 1, specifiers.length, 'codeError.scanfAmpersand', {
+        throw scanfReadError(peek().line, position, specifiers.length, 'codeError.scanfAmpersand', {
           name: peek().text,
         })
       }
@@ -703,17 +745,18 @@ export function parse(source: string): Program {
       return expr
     }
 
-    if (token.kind === 'string') throw stringError(token.line)
     if (token.kind === 'char') {
-      throw new UnsupportedConstructError(token.line, { key: 'construct.char', values: { text: token.text } }, { key: 'unsupported.char' })
+      advance()
+      return { kind: 'number', line: token.line, type: 'char', value: token.value ?? 0 }
     }
+    if (token.kind === 'string') throw stringError(token.line)
     rejectUnsupportedKeyword(token)
     rejectUnsupportedOperator(token)
     throw new CodeError(token.line, 'codeError.expectedValue', { found: describe(token) })
   }
 }
 
-/** Returns the conversion letters in a printf or scanf format ("d", "f", and "s" for printf), rejecting any others. */
+/** Returns the conversion letters in a printf or scanf format ("d", "f", "s", and "c" for printf), rejecting any others. */
 function readFormatSpecifiers(format: string, line: number, fn: 'printf' | 'scanf' = 'printf'): string[] {
   const specifiers: string[] = []
   for (let i = 0; i < format.length; i++) {
@@ -725,7 +768,7 @@ function readFormatSpecifiers(format: string, line: number, fn: 'printf' | 'scan
     // Read up to the conversion letter so "%.2f" or "%5d" is reported as a whole.
     const match = /^%[^A-Za-z%]*[A-Za-z]?/.exec(format.slice(i))
     const placeholder = match ? match[0] : '%'
-    const allowed = fn === 'printf' ? ['%d', '%f', '%s'] : ['%d', '%f']
+    const allowed = fn === 'printf' ? ['%d', '%f', '%c', '%s'] : ['%d', '%f', '%s']
     if (!allowed.includes(placeholder)) {
       throw new UnsupportedConstructError(
         line,

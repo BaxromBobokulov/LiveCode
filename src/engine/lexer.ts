@@ -6,6 +6,8 @@ export type Token = {
   kind: TokenKind
   /** The token as written. For strings, the text between the quotes with escapes decoded. */
   text: string
+  /** For a char literal like 'A': its character code (65). */
+  value?: number
   /** 1-based source line. */
   line: number
 }
@@ -106,10 +108,9 @@ export function tokenize(source: string): Token[] {
     }
 
     if (char === "'") {
-      const end = source.indexOf("'", pos + 1)
-      const text = source.slice(pos, end === -1 ? pos + 1 : end + 1)
-      tokens.push({ kind: 'char', text, line })
-      pos += text.length
+      const start = pos
+      const value = readChar()
+      tokens.push({ kind: 'char', text: source.slice(start, pos), value, line })
       continue
     }
 
@@ -128,26 +129,36 @@ export function tokenize(source: string): Token[] {
     pos++ // opening quote
     while (pos < source.length && source[pos] !== '"') {
       if (source[pos] === '\n') break
-      if (source[pos] === '\\') {
-        const escape = source[pos + 1]
-        if (escape === 'n') text += '\n'
-        else if (escape === '"' || escape === '\\') text += escape
-        else {
-          const values = { escape: `\\${escape ?? ''}` }
-          throw new UnsupportedConstructError(
-            line,
-            { key: 'construct.escape', values },
-            { key: 'unsupported.escape', values },
-          )
-        }
-        pos += 2
-        continue
-      }
-      text += source[pos]
-      pos++
+      text += source[pos] === '\\' ? readEscape(false) : source[pos++]
     }
     if (source[pos] !== '"') throw new CodeError(line, 'codeError.unclosedString')
     pos++ // closing quote
     return text
+  }
+
+  // Reads a 'A' character literal starting at `pos` and returns its character code.
+  function readChar(): number {
+    pos++ // opening quote
+    let text = ''
+    while (pos < source.length && source[pos] !== "'" && source[pos] !== '\n') {
+      text += source[pos] === '\\' ? readEscape(true) : source[pos++]
+    }
+    // Exactly one character between the quotes: not '' or 'ab', and the closing ' is there.
+    if (source[pos] !== "'" || text.length !== 1) throw new CodeError(line, 'codeError.badChar')
+    pos++ // closing quote
+    const code = text.charCodeAt(0)
+    if (code > 127) throw new CodeError(line, 'codeError.nonAsciiChar', { char: text })
+    return code
+  }
+
+  // Reads an escape like \n at `pos` and returns the character it stands for. \0 only works in a char literal.
+  function readEscape(inChar: boolean): string {
+    const escape = source[pos + 1]
+    pos += 2
+    if (escape === 'n') return '\n'
+    if (escape === '"' || escape === "'" || escape === '\\') return escape
+    if (escape === '0' && inChar) return '\0'
+    const values = { escape: `\\${escape ?? ''}` }
+    throw new UnsupportedConstructError(line, { key: 'construct.escape', values }, { key: 'unsupported.escape', values })
   }
 }

@@ -16,6 +16,8 @@ export type Shown = { source: string; work: string; result: string }
 export type StepFact =
   | { kind: 'declare'; name: string; value: Shown | null }
   | { kind: 'declareArray'; name: string; type: string; size: number; values: string[] | null }
+  /** `char name[] = "hi"`: `text` is the quoted text, `count` its number of characters. */
+  | { kind: 'declareString'; name: string; size: number; text: string; count: number }
   | { kind: 'declareGrid'; name: string; type: string; rows: number; cols: number; values: string[][] | null }
   /** A 2D array cell read while working out this line, e.g. target "grid[1][2]". */
   | { kind: 'readCell'; target: string; value: string }
@@ -45,6 +47,8 @@ export type StepFact =
   | { kind: 'print'; text: string }
   /** scanf stored the next input value in `target`. */
   | { kind: 'scan'; target: string; value: string }
+  /** scanf("%s") stored the next input word in the char array `name`. */
+  | { kind: 'scanText'; name: string; text: string; count: number }
 
 /** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. Only code and numbers, so no translation. */
 function showValue({ source, work, result }: Shown): string {
@@ -61,9 +65,9 @@ function showCondition({ source, work }: Shown, result: boolean): Phrase {
     : { key: 'explain.conditionWork', values: { source, work, result: truth } }
 }
 
-/** "an int" or "a float" */
+/** "an int", "a float" or "a char" */
 function typeName(type: string): Phrase {
-  return { key: type === 'int' ? 'explain.type.int' : 'explain.type.float' }
+  return { key: type === 'int' ? 'explain.type.int' : type === 'char' ? 'explain.type.char' : 'explain.type.float' }
 }
 
 /**
@@ -103,12 +107,12 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'declareArray': {
       const values = { type: typeName(fact.type), name: fact.name, size: fact.size }
-      return [
-        fact.values
-          ? { key: 'explain.declareArrayValues', values: { ...values, values: fact.values.join(', ') } }
-          : { key: 'explain.declareArrayEmpty', values },
-      ]
+      if (fact.values) return [{ key: 'explain.declareArrayValues', values: { ...values, values: fact.values.join(', ') } }]
+      return [{ key: fact.type === 'char' ? 'explain.declareCharArrayEmpty' : 'explain.declareArrayEmpty', values }]
     }
+
+    case 'declareString':
+      return [{ key: 'explain.declareString', values: { name: fact.name, size: fact.size, text: fact.text, count: fact.count } }]
 
     case 'declareGrid': {
       const values = { type: typeName(fact.type), name: fact.name, rows: fact.rows, cols: fact.cols }
@@ -209,6 +213,9 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'scan':
       return [{ key: 'explain.scan', values: { target: fact.target, value: fact.value } }]
+
+    case 'scanText':
+      return [{ key: 'explain.scanText', values: { name: fact.name, text: fact.text, count: fact.count } }]
 
     case 'print': {
       if (fact.text === '') return [{ key: 'explain.printEmpty' }]

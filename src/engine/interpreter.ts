@@ -5,6 +5,7 @@ import {
   formatNumber,
   needsParens,
   parse,
+  quoteText,
   toSource,
   type BinaryOp,
   type Declarator,
@@ -79,11 +80,23 @@ export function runUserCode(source: string, input = ''): { steps: Step[] } | { e
 }
 
 function convert(value: number, type: NumType): number {
-  return type === 'int' ? Math.trunc(value) | 0 : Math.fround(value)
+  if (type === 'float') return Math.fround(value)
+  // A char holds -128 to 127, so a bigger number wraps around, like in C.
+  return type === 'char' ? (Math.trunc(value) << 24) >> 24 : Math.trunc(value) | 0
+}
+
+/** The text in a char array: its characters up to the first \0, or null when there is no \0. */
+function textOf(values: number[]): string | null {
+  const end = values.indexOf(0)
+  return end === -1 ? null : String.fromCharCode(...values.slice(0, end))
 }
 
 function formatSlot(slot: Slot): string {
-  const formatRow = (row: number[]) => `[${row.map((v) => formatNumber(v, slot.type)).join(', ')}]`
+  // A char array is shown as the text it holds, e.g. "hello".
+  const formatRow = (row: number[]) =>
+    slot.type === 'char'
+      ? quoteText(textOf(row) ?? String.fromCharCode(...row))
+      : `[${row.map((v) => formatNumber(v, slot.type)).join(', ')}]`
   if (slot.kind === 'array') return formatRow(slot.values)
   if (slot.kind === 'grid') return `[${slot.values.map(formatRow).join(', ')}]`
   return slot.value === null ? '?' : formatNumber(slot.value, slot.type)
@@ -91,10 +104,20 @@ function formatSlot(slot: Slot): string {
 
 /** What the array view shows for an array, with `active` as the element or cell in use. */
 function arrayView(name: string, store: ArrayStore | GridStore, active: number | GridCell | null): ArrayView | GridView {
+  const chars = store.type === 'char' ? { chars: true as const } : {}
   if (store.kind === 'grid') {
-    return { name, values: store.values.map((row) => [...row]), activeIndex: typeof active === 'object' ? active : null }
+    return { name, values: store.values.map((row) => [...row]), activeIndex: typeof active === 'object' ? active : null, ...chars }
   }
-  return { name, values: [...store.values], activeIndex: typeof active === 'number' ? active : null }
+  return { name, values: [...store.values], activeIndex: typeof active === 'number' ? active : null, ...chars }
+}
+
+/** The character codes of `text`, checking each one fits in a char (plain ASCII). */
+function charCodes(text: string, line: number): number[] {
+  return [...text].map((char) => {
+    const code = char.charCodeAt(0)
+    if (char.length > 1 || code > 127) throw new CodeError(line, 'codeError.nonAsciiChar', { char })
+    return code
+  })
 }
 
 /** Wraps an operand's text in parentheses when the source would need them, e.g. "(4 + 8) * 2". */
@@ -114,7 +137,7 @@ function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: num
     case '||': return a !== 0 || b !== 0 ? 1 : 0
     case '+': return convert(a + b, type)
     case '-': return convert(a - b, type)
-    case '*': return type === 'int' ? Math.imul(a, b) : Math.fround(a * b)
+    case '*': return type === 'float' ? Math.fround(a * b) : convert(Math.imul(a, b), type)
     case '/':
       if (b === 0) throw new CodeError(line, 'codeError.divisionByZero')
       return convert(a / b, type) // int division drops the fraction, like C
@@ -132,8 +155,11 @@ export function execute(program: Program, input: string[] = []): Step[] {
   let output = ''
   /** How many input values scanf has used so far. */
   let inputUsed = 0
-  /** The array element or 2D cell the current statement read or wrote. It is shown as active in the array view. */
-  let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell } | null = null
+  /**
+   * The array the current statement used, and the element or 2D cell it read or wrote (shown as active
+   * in the array view). `active` is null when it used the whole array, e.g. printf("%s", name).
+   */
+  let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell | null } | null = null
   /** 2D cells the current statement read, explained before what the statement did. */
   let cellReads: StepFact[] = []
   /**
@@ -369,7 +395,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     outsideMessage: (value: number) => Required<Phrase>,
   ): number {
     const value = evaluate(index)
-    if (value.type !== 'int') throw new CodeError(line, 'codeError.indexFloat', { index: toSource(index) })
+    if (value.type === 'float') throw new CodeError(line, 'codeError.indexFloat', { index: toSource(index) })
     if (value.value < 0 || value.value >= size) {
       const { key, values } = outsideMessage(value.value)
       throw new CodeError(line, key, values)
@@ -416,17 +442,17 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     if (d.isArray && d.columns) return declareGrid(type, d, d.columns, scope)
 
+    if (d.isArray && d.stringInit !== null) return declareString(d, d.stringInit, scope)
+
     if (d.isArray) {
       const size = d.size ? evaluateSize(d.size, d) : (d.arrayInit?.length ?? 0)
-      if (size > MAX_ARRAY_SIZE) {
-        throw new CodeError(d.line, 'codeError.arrayTooBig', { name: d.name, max: MAX_ARRAY_SIZE })
-      }
+      checkArraySize(size, d)
       const init = d.arrayInit ?? []
       if (init.length > size) {
         throw new CodeError(d.line, 'codeError.tooManyValues', { name: d.name, size, given: init.length })
       }
 
-      // C fills the rest of a partly-initialised array with 0.
+      // C fills the rest of a partly-initialised array with 0 (for a char array, that is \0).
       const values = new Array<number>(size).fill(0)
       init.forEach((expr, i) => (values[i] = convert(evaluate(expr).value, type)))
       scope.set(d.name, { kind: 'array', type, values })
@@ -442,6 +468,51 @@ export function execute(program: Program, input: string[] = []): Step[] {
         ? { source: toSource(d.init), work: value.work, result: formatNumber(stored, type) }
         : null
     return { facts: [{ kind: 'declare', name: d.name, value: shown }], changed: [d.name] }
+  }
+
+  /**
+   * `char name[] = "hello";` stores the characters and then a \0 that marks where the text ends,
+   * so it needs one element more than the text has characters: here 6.
+   */
+  function declareString(d: Declarator, text: string, scope: Map<string, Slot>): Effect {
+    const codes = charCodes(text, d.line)
+    const size = d.size ? evaluateSize(d.size, d) : codes.length + 1
+    checkArraySize(size, d)
+    if (codes.length + 1 > size) {
+      throw new CodeError(d.line, 'codeError.stringTooLong', {
+        text: quoteText(text),
+        needed: codes.length + 1,
+        count: codes.length,
+        name: d.name,
+        size,
+      })
+    }
+    const values = new Array<number>(size).fill(0)
+    codes.forEach((c, i) => (values[i] = c))
+    scope.set(d.name, { kind: 'array', type: 'char', values })
+    return {
+      facts: [{ kind: 'declareString', name: d.name, size, text: quoteText(text), count: codes.length }],
+      changed: [d.name],
+    }
+  }
+
+  function checkArraySize(size: number, d: Declarator) {
+    if (size > MAX_ARRAY_SIZE) {
+      throw new CodeError(d.line, 'codeError.arrayTooBig', { name: d.name, max: MAX_ARRAY_SIZE })
+    }
+  }
+
+  /**
+   * The text in the char array `name`, for printf's %s or puts. Marks the whole array as used,
+   * so the array view shows it.
+   */
+  function readText(name: string, line: number, notText: () => CodeError): string {
+    const slot = lookup(name, line)
+    if (slot.kind !== 'array' || slot.type !== 'char') throw notText()
+    const text = textOf(slot.values)
+    if (text === null) throw new CodeError(line, 'codeError.noTerminator', { name })
+    access = { name, store: slot, active: null }
+    return text
   }
 
   /** `int grid[rows][cols] = {{...}, {...}};` */
@@ -502,7 +573,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
         const operand = evaluate(expr.operand)
         const work = expr.operand.kind === 'binary' ? `${expr.op}(${operand.work})` : `${expr.op}${operand.work}`
         if (expr.op === '!') return { type: 'int', value: operand.value === 0 ? 1 : 0, work }
-        return { type: operand.type, value: convert(-operand.value, operand.type), work }
+        // Like any arithmetic on a char, -c gives an int.
+        const type: NumType = operand.type === 'float' ? 'float' : 'int'
+        return { type, value: convert(-operand.value, type), work }
       }
 
       case 'binary': {
@@ -533,6 +606,10 @@ export function execute(program: Program, input: string[] = []): Step[] {
         }
         return result
       }
+
+      // The parser only lets a "string" through where text is expected, which never needs its value.
+      case 'string':
+        throw new UnsupportedConstructError(expr.line, { key: 'construct.string' }, { key: 'unsupported.string' })
     }
   }
 
@@ -627,17 +704,25 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'printf': {
         let argIndex = 0
-        const text = stmt.format.replace(/%[dfs%]/g, (placeholder) => {
+        const text = stmt.format.replace(/%[dfcs%]/g, (placeholder) => {
           if (placeholder === '%%') return '%'
           const arg = stmt.args[argIndex++]
-          if (arg.kind === 'text') return arg.value
+          if (arg.kind === 'string') return arg.value
+          if (placeholder === '%s' && arg.kind === 'var') {
+            return readText(arg.name, stmt.line, () =>
+              stmt.isPuts
+                ? new CodeError(stmt.line, 'codeError.putsText')
+                : new CodeError(stmt.line, 'codeError.printfSNotText', { arg: arg.name }),
+            )
+          }
           const value = evaluate(arg)
-          if (placeholder === '%d' && value.type !== 'int') {
-            throw new CodeError(stmt.line, 'codeError.printfIntGotFloat', { arg: toSource(arg) })
-          }
-          if (placeholder === '%f' && value.type !== 'float') {
-            throw new CodeError(stmt.line, 'codeError.printfFloatGotInt', { arg: toSource(arg) })
-          }
+          const values = { arg: toSource(arg) }
+          // %d also prints a char, as its character code.
+          if (placeholder === '%d' && value.type === 'float') throw new CodeError(stmt.line, 'codeError.printfIntGotFloat', values)
+          if (placeholder === '%c' && value.type === 'float') throw new CodeError(stmt.line, 'codeError.printfCharGotFloat', values)
+          if (placeholder === '%f' && value.type === 'int') throw new CodeError(stmt.line, 'codeError.printfFloatGotInt', values)
+          if (placeholder === '%f' && value.type === 'char') throw new CodeError(stmt.line, 'codeError.printfFloatGotChar', values)
+          if (placeholder === '%c') return value.value === 0 ? '' : String.fromCharCode(value.value & 0xff)
           return placeholder === '%d' ? String(value.value) : value.value.toFixed(6)
         })
         output += text
@@ -655,7 +740,16 @@ export function execute(program: Program, input: string[] = []): Step[] {
             throw fail('codeError.scanfNoInput', { needed: inputUsed + 1, given: input.length })
           }
           const text = input[inputUsed++]
+          if (specifier === 's') {
+            const name = targetExpr.name
+            scanText(name, text, stmt.line, fail)
+            emit(stmt.line, { kind: 'scanText', name, text: quoteText(text), count: text.length }, [name])
+            return
+          }
           const target = resolveTarget(targetExpr)
+          if (target.type === 'char') {
+            throw fail('codeError.scanfIntoChar', { target: toSource(targetExpr), specifier: `%${specifier}` })
+          }
           if (specifier === 'd' && target.type !== 'int') {
             throw fail('codeError.scanfIntIntoFloat', { target: toSource(targetExpr) })
           }
@@ -719,6 +813,24 @@ export function execute(program: Program, input: string[] = []): Step[] {
         return { value: result }
       }
     }
+  }
+
+  /**
+   * scanf("%s", name): stores one word from the Input field in the char array `name`,
+   * followed by the \0 that marks where the text ends.
+   */
+  function scanText(name: string, text: string, line: number, fail: (key: TranslationKey, values: Phrase['values']) => CodeError) {
+    const slot = lookup(name, line)
+    if (slot.kind !== 'array' || slot.type !== 'char') throw fail('codeError.scanfSNotText', { target: name })
+    const nonAscii = [...text].find((char) => char.length > 1 || char.charCodeAt(0) > 127)
+    if (nonAscii) throw fail('codeError.nonAsciiChar', { char: nonAscii })
+    const size = slot.values.length
+    if (text.length + 1 > size) {
+      throw fail('codeError.scanfTooLong', { value: text, count: text.length, name, size, room: size - 1 })
+    }
+    charCodes(text, line).forEach((c, i) => (slot.values[i] = c))
+    slot.values[text.length] = 0
+    access = { name, store: slot, active: null }
   }
 
   function runLoop(stmt: Extract<Stmt, { kind: 'while' | 'for' }>): Returned | null {

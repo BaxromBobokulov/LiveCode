@@ -10,6 +10,7 @@ import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundSto
 import ArrayVisualizer from './ArrayVisualizer'
 import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
+import SpeedControl from './SpeedControl'
 import VariablesPanel from './VariablesPanel'
 
 type ExecutionPanelProps = {
@@ -76,7 +77,8 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
       </header>
 
       <div className="flex flex-col gap-4.5 p-4.5">
-        <div className="flex gap-2">
+        {/* The speed picker wraps onto its own line when the panel is too narrow for all four */}
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" className="flex-auto" onClick={prev} disabled={stepIndex === 0}>
             {t('button.previous')}
           </Button>
@@ -86,6 +88,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
           <Button className="flex-auto" onClick={next} disabled={isLastStep}>
             {t('button.next')}
           </Button>
+          <SpeedControl />
         </div>
 
         <ProgressBar value={(stepIndex + 1) / totalSteps} />

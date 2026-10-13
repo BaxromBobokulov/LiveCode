@@ -12,6 +12,7 @@ const completions: Completion[] = [
   { label: 'return', type: 'keyword', detail: 'return — send a value back from a function' },
   { label: 'int', type: 'type', detail: 'int — a whole number, like 5 or -2' },
   { label: 'float', type: 'type', detail: 'float — a number with a decimal point, like 3.5' },
+  { label: 'char', type: 'type', detail: "char — one character, like 'A'; char name[20] holds text" },
   {
     label: 'printf',
     type: 'function',

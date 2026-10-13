@@ -63,17 +63,19 @@ function PlaygroundScreen() {
   const reduceMotion = useReducedMotion()
   const splitRatio = useSettingsStore((state) => state.splitRatio)
   const setSplitRatio = useSettingsStore((state) => state.setSplitRatio)
+  const playbackSpeed = useSettingsStore((state) => state.playbackSpeed)
   // The panel expanded to the full width, if any. Not saved: a reload shows both panels again.
   const [maximized, setMaximized] = useState<PanelId | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const { t } = useTranslation()
 
   // Auto Play: move one step forward after a short pause, until the store stops playing.
+  // A faster speed means a shorter pause; changing it mid-play restarts the current pause at the new length.
   useEffect(() => {
     if (!isPlaying) return
-    const timer = setTimeout(next, AUTOPLAY_DELAY_MS)
+    const timer = setTimeout(next, AUTOPLAY_DELAY_MS / playbackSpeed)
     return () => clearTimeout(timer)
-  }, [isPlaying, stepIndex, next])
+  }, [isPlaying, stepIndex, next, playbackSpeed])
 
   // Leaving the Playground stops a scroll that hasn't finished.
   useEffect(() => () => cancelScroll.current?.(), [])

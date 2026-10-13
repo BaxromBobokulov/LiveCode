@@ -213,6 +213,7 @@ describe('runUserCode', () => {
       '}',
       'int main() {',
       '    float g[1][2] = {{1, 2}};',
+      '    char t[] = "ab", u[2];',
       '    int s = 0;',
       '    for (int i = 0; i < 2; i++) {',
       '        if (i > 0) { s = add(s, i); } else if (i < 0) { s--; } else { s++; }',
@@ -357,5 +358,70 @@ describe('runUserCode', () => {
       key: 'codeError.scanfValue',
       values: { position: 2, problem: { key: 'codeError.scanfAmpersand' } },
     })
+  })
+
+  it('stores a string in a char array, followed by \\0', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    char name[] = "hi";',
+        '    char c = name[0];',
+        '    name[1] = c + 1;',
+        '    printf("%s %c %d\\n", name, c, c);',
+        '    puts(name);',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    expect(steps[0].array).toEqual({ name: 'name', values: [104, 105, 0], activeIndex: null, chars: true })
+    expect(steps[0].variables).toContainEqual({ name: 'name', value: '"hi"' })
+    expect(english(steps[0])).toBe('Declare char array name with 3 elements and store "hi" in it: 2 characters, then \\0 to mark where the text ends.')
+    expect(english(steps[1])).toBe("Create c and set it to name[0] ('h').")
+    expect(english(steps[2])).toBe("Set name[1] to c + 1: 'h' + 1 = 'i'.")
+    expect(steps[2].array).toMatchObject({ activeIndex: 1, chars: true })
+    expect(steps[4].output).toBe('hi h 104\nhi\n')
+  })
+
+  it('fills the rest of a bigger char array with \\0', () => {
+    const steps = stepsOf(lines('int main() {', '    char word[5] = "ok";', '    char empty[3];', '    return 0;', '}'))
+
+    expect(steps[0].array?.values).toEqual([111, 107, 0, 0, 0])
+    expect(english(steps[1])).toBe('Declare a char array empty with room for 3 characters. It holds no text yet (every element is shown as \\0).')
+  })
+
+  it('reads a word into a char array with scanf %s', () => {
+    const source = lines('int main() {', '    char name[6];', '    int age;', '    scanf("%s %d", name, &age);', '    printf("%s is %d\\n", name, age);', '}')
+    const result = runUserCode(source, 'Alice 30')
+    if ('error' in result) throw new Error(result.error.message)
+    const reads = result.steps.filter((s) => s.line === 4)
+
+    expect(english(reads[0])).toBe('Read the word "Alice" from the input and store it in name: 5 characters, then \\0 to mark where the text ends.')
+    expect(reads[0].array).toEqual({ name: 'name', values: [65, 108, 105, 99, 101, 0], activeIndex: null, chars: true })
+    expect(result.steps.at(-1)?.output).toBe('Alice is 30\n')
+
+    const tooLong = runUserCode(source, 'Alexander 30')
+    expect('error' in tooLong && tooLong.error.text).toMatchObject({
+      key: 'codeError.scanfValue',
+      values: { position: 1, problem: { key: 'codeError.scanfTooLong', values: { count: 9, room: 5 } } },
+    })
+  })
+
+  it('reports char mistakes as code errors', () => {
+    const errorKey = (body: string, input = '') => {
+      const result = runUserCode(lines('int main() {', body, '    return 0;', '}'), input)
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error.text.key
+    }
+
+    expect(errorKey('    char s[5] = "hello";')).toBe('codeError.stringTooLong')
+    expect(errorKey('    char c = "A";')).toBe('codeError.stringIntoChar')
+    expect(errorKey('    int n[3] = "hi";')).toBe('codeError.stringIntoNonChar')
+    expect(errorKey("    char c = 'ab';")).toBe('codeError.badChar')
+    expect(errorKey('    char s[3] = "hi"; s = "yo";')).toBe('codeError.assignString')
+    expect(errorKey('    char s[2] = {\'h\', \'i\'}; printf("%s", s);')).toBe('codeError.noTerminator')
+    expect(errorKey('    int x = 1; printf("%s", x);')).toBe('codeError.printfSNotText')
+    expect(errorKey('    char s[3]; scanf("%s", &s);')).toBe('codeError.scanfSTarget')
+    expect(errorKey('    char c; scanf("%d", &c);', '5')).toBe('codeError.scanfIntoChar')
   })
 })

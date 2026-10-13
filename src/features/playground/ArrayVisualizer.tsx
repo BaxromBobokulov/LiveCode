@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { isGridView, type ArrayView, type GridCell, type GridView } from '../../engine/types'
+import { charText, isGridView, type ArrayView, type GridCell, type GridView } from '../../engine/types'
 import { useTranslation } from '../../i18n/useTranslation'
 
 // Framer Motion animates between the same color tokens via their CSS variables
@@ -25,18 +25,35 @@ function highlights(view: ArrayView | null, index: number): boolean {
   return view !== null && (view.activeIndex === index || view.secondIndex === index)
 }
 
+/** A cell's text: the number, or for a char array the character, with a space shown as ␣ so it can be seen. */
+function cellText(value: number, chars: boolean): string {
+  if (!chars) return String(value)
+  return value === 32 ? '␣' : charText(value)
+}
+
+/** A char array's text as C reads it: every character up to the first \0. */
+function textOf(values: number[]): string {
+  const end = values.indexOf(0)
+  return (end === -1 ? values : values.slice(0, end)).map((code) => charText(code)).join('')
+}
+
 type CellProps = {
   value: number
+  /** The value is a character code, drawn as its character. */
+  chars: boolean
   isActive: boolean
   /** Only the cells swapping the highlight animate; every other cell stays a plain div. */
   isAnimated: boolean
 }
 
-function ArrayCell({ value, isActive, isAnimated }: CellProps) {
-  const cellClass = `flex size-12 items-center justify-center rounded-container border font-mono text-body-md text-text ${
+function ArrayCell({ value, chars, isActive, isAnimated }: CellProps) {
+  // A \0 is dimmed so the text stands out, except when highlighted (muted text is too faint on the tint).
+  const textColor = chars && value === 0 && !isActive ? 'text-textMuted' : 'text-text'
+  const cellClass = `flex size-12 items-center justify-center rounded-container border font-mono text-body-md ${textColor} ${
     isActive ? 'border-accent bg-accentTint' : 'border-border bg-panel'
   }`
-  if (!isAnimated) return <div className={cellClass}>{value}</div>
+  const text = cellText(value, chars)
+  if (!isAnimated) return <div className={cellClass}>{text}</div>
   return (
     <motion.div
       initial={inactiveColors}
@@ -44,7 +61,7 @@ function ArrayCell({ value, isActive, isAnimated }: CellProps) {
       transition={transition}
       className={cellClass}
     >
-      {value}
+      {text}
     </motion.div>
   )
 }
@@ -83,6 +100,13 @@ function ArrayVisualizer({ array }: { array: ArrayView | GridView }) {
     <div>
       <h3 className="mb-1.75 text-label text-textMuted">
         {t('panel.array')} <span className="font-mono font-normal">{array.name}</span>
+        {/* A char array also shows the text its cells spell out, e.g. name = "hello". */}
+        {array.chars && !isGridView(array) && (
+          <span className="font-mono font-normal">
+            {' = '}
+            <span className="text-text">"{textOf(array.values)}"</span>
+          </span>
+        )}
       </h3>
       {isGridView(array) ? (
         <ArrayGrid grid={array} before={previous && isGridView(previous) ? previous.activeIndex : null} reduceMotion={!!reduceMotion} />
@@ -93,7 +117,7 @@ function ArrayVisualizer({ array }: { array: ArrayView | GridView }) {
             const isAnimated = !reduceMotion && (isActive || highlights(previous1D, index))
             return (
               <div key={index} className="flex flex-col items-center gap-1">
-                <ArrayCell value={value} isActive={isActive} isAnimated={isAnimated} />
+                <ArrayCell value={value} chars={!!array.chars} isActive={isActive} isAnimated={isAnimated} />
                 <IndexLabel index={index} isActive={isActive} isAnimated={isAnimated} />
               </div>
             )
@@ -134,7 +158,15 @@ function ArrayGrid({ grid, before, reduceMotion }: { grid: GridView; before: Gri
           {row.map((value, col) => {
             const isActive = active?.row === r && active.col === col
             const wasActive = before?.row === r && before.col === col
-            return <ArrayCell key={col} value={value} isActive={isActive} isAnimated={!reduceMotion && (isActive || wasActive)} />
+            return (
+              <ArrayCell
+                key={col}
+                value={value}
+                chars={!!grid.chars}
+                isActive={isActive}
+                isAnimated={!reduceMotion && (isActive || wasActive)}
+              />
+            )
           })}
         </Fragment>
       ))}
