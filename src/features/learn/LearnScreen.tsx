@@ -1,16 +1,16 @@
 import { useTranslation } from '../../i18n/useTranslation'
 
-/** Shows each "printf" in a paragraph in the code font. */
+/** Shows each "printf", "puts" and "scanf" in a paragraph in the code font. */
 function withCode(text: string) {
-  return text.split('printf').flatMap((part, index) =>
-    index === 0
-      ? [part]
-      : [
-          <code key={index} className="font-mono">
-            printf
-          </code>,
-          part,
-        ],
+  // Splitting on a capture group keeps the matched names at the odd indexes.
+  return text.split(/\b(printf|puts|scanf)\b/).map((part, index) =>
+    index % 2 === 0 ? (
+      part
+    ) : (
+      <code key={index} className="font-mono">
+        {part}
+      </code>
+    ),
   )
 }
 

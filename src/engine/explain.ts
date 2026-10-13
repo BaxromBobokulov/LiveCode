@@ -43,6 +43,8 @@ export type StepFact =
   | { kind: 'return'; name: string; value: Shown | null; caller: string | null }
   | { kind: 'end'; name: string; caller: string | null }
   | { kind: 'print'; text: string }
+  /** scanf stored the next input value in `target`. */
+  | { kind: 'scan'; target: string; value: string }
 
 /** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. Only code and numbers, so no translation. */
 function showValue({ source, work, result }: Shown): string {
@@ -204,6 +206,9 @@ export function explain(fact: StepFact): Phrase[] {
           ? { key: 'explain.endMain', values: { name: fact.name } }
           : { key: 'explain.endTo', values: { name: fact.name, caller: fact.caller } },
       ]
+
+    case 'scan':
+      return [{ key: 'explain.scan', values: { target: fact.target, value: fact.value } }]
 
     case 'print': {
       if (fact.text === '') return [{ key: 'explain.printEmpty' }]

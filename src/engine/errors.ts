@@ -34,6 +34,30 @@ export class CodeError extends Error {
 
 export type RunError = UnsupportedConstructError | CodeError
 
+/**
+ * A problem with one value of a scanf call. In a call that reads several values,
+ * the message says which one, e.g. "Value 2 of 2 in this scanf call: ...".
+ */
+export function scanfReadError(
+  line: number,
+  position: number,
+  count: number,
+  key: TranslationKey,
+  values?: Phrase['values'],
+): CodeError {
+  if (count <= 1) return new CodeError(line, key, values)
+  return new CodeError(line, 'codeError.scanfValue', { position, count, problem: { key, values } })
+}
+
+/** Whether Run failed because the Input field had fewer values than the program's scanf calls read. */
+export function isMissingInput(error: RunError): boolean {
+  if (!(error instanceof CodeError)) return false
+  const { key, values } = error.text
+  if (key === 'codeError.scanfNoInput') return true
+  const problem = values?.problem
+  return key === 'codeError.scanfValue' && typeof problem === 'object' && 'key' in problem && problem.key === 'codeError.scanfNoInput'
+}
+
 /** A C keyword, operator or bit of code named as-is in every language, e.g. "goto" or "sqrt()". */
 export function code(text: string): Phrase {
   return { key: 'construct.code', values: { code: text } }

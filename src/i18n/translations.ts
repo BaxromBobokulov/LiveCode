@@ -24,6 +24,9 @@ const en = {
   'button.pause': 'Pause',
 
   'editor.language': 'Programming language',
+  'editor.input': 'Input',
+  'editor.inputHint': 'Values for scanf, separated by spaces, e.g. 5 2.5',
+  'editor.inputEdit': 'Edit',
   'layout.resize': 'Resize panels. Use the left and right arrow keys.',
   'layout.expandEditor': 'Expand the code editor',
   'layout.expandExecution': 'Expand the Execution panel',
@@ -59,8 +62,8 @@ const en = {
   'construct.string': 'string',
   'construct.char': 'character {text}',
   'construct.cast': 'type cast',
-  'construct.printfInExpr': 'printf inside an expression',
-  'construct.placeholder': 'printf placeholder {placeholder}',
+  'construct.printfInExpr': '{name} inside an expression',
+  'construct.placeholder': '{fn} placeholder {placeholder}',
   'construct.escape': '{escape} escape',
   'construct.recursion': 'recursion',
 
@@ -86,7 +89,8 @@ const en = {
   'unsupported.pointer': 'Pointers are not supported yet.',
   'unsupported.globalVariable': 'Global variables are not supported yet. Declare {name} inside a function.',
   'unsupported.mainParams': 'main() with parameters (argc, argv) is not supported. Use int main().',
-  'unsupported.printfInExpr': 'printf must be a statement of its own.',
+  'unsupported.printfInExpr': '{name} must be a statement of its own.',
+  'unsupported.scanfPlaceholder': 'The scanf placeholder {placeholder} is not supported yet. Only %d and %f work.',
   'unsupported.cast': 'Type casts like (float)x are not supported yet.',
   'unsupported.char': 'Characters (char) are not supported yet. Use int or float.',
   'unsupported.placeholder': 'The printf placeholder {placeholder} is not supported yet. Only %d, %f and %s work.',
@@ -95,7 +99,7 @@ const en = {
   'unsupported.include': 'Only #include <stdio.h> is supported. Other libraries are not available yet.',
   'unsupported.directive': 'Preprocessor directives like #define are not supported yet.',
   'unsupported.escape': 'The escape {escape} is not supported yet. Only \\n works in strings.',
-  'unsupported.libraryFunction': '{name}() is not supported yet. The only library function available is printf.',
+  'unsupported.libraryFunction': '{name}() is not supported yet. The library functions available are printf, puts and scanf.',
   'unsupported.recursion':
     '{name} is called again while it is still running (recursion). Recursion is not supported yet. Use a loop instead.',
 
@@ -165,6 +169,17 @@ const en = {
   'codeError.printfCount': 'The printf text has {placeholders} placeholder(s) (%d, %f, %s) but {given} value(s) were given.',
   'codeError.printfS': '%s needs a text string like "hello". Use %d or %f for numbers.',
   'codeError.printfNumber': '{specifier} needs a number, but a text string was given. Use %s for text.',
+  'codeError.putsText': 'puts needs a text string, e.g. puts("hello").',
+  'codeError.scanfFormat': 'scanf needs a text string with one placeholder first, e.g. scanf("%d", &x).',
+  'codeError.scanfCount': 'The scanf text has {placeholders} placeholder(s) (%d, %f) but {given} variable(s) were given.',
+  'codeError.scanfValue': 'Value {position} of {count} in this scanf call: {problem}',
+  'codeError.scanfAmpersand': 'scanf needs & before the variable it fills, e.g. scanf("%d", &{name}).',
+  'codeError.scanfNoInput':
+    'Not enough input values: this scanf needs value number {needed}, but the Input field has only {given}. Enter one value per scanf, separated by spaces.',
+  'codeError.scanfIntIntoFloat': '%d reads an int, but {target} is a float. Use %f instead.',
+  'codeError.scanfFloatIntoInt': '%f reads a float, but {target} is an int. Use %d instead.',
+  'codeError.scanfNotInt': `"{value}" from the Input field is not a whole number, so %d can't read it.`,
+  'codeError.scanfNotNumber': `"{value}" from the Input field is not a number, so %f can't read it.`,
   'found.eof': 'the end of the file',
   'found.string': 'a string',
   'found.token': '"{text}"',
@@ -232,6 +247,7 @@ const en = {
   'explain.printNewline': 'Print a line break, so the next output starts on a new line.',
   'explain.printLine': 'Print "{text}" and move to a new line.',
   'explain.print': 'Print "{text}".',
+  'explain.scan': 'Read {value} from the input and store it in {target}.',
 
   // Step explanations of the hand-authored examples (src/data/examples/).
   'step.declareIntArray': 'Declare an integer array {name} with {size} elements.',
@@ -305,13 +321,13 @@ const en = {
   'example.user.title': 'Your Code',
 
   'learn.title': 'How CodeVision works',
-  // In the two paragraphs below, the word printf is shown in the code font.
+  // In the two paragraphs below, the words printf, puts and scanf are shown in the code font.
   'learn.p1':
     'CodeVision runs a short C program one step at a time. Start from one of the Examples, or type or paste your own program into the Playground editor and press Run. Each step is one line: the editor highlights it and the Execution panel explains what it did in plain language.',
   'learn.p2':
     'Variables that changed on the current step are outlined in blue. When a program walks through an array, the array view marks the element in use and the loop tracker counts iterations. Anything printed with printf appears in the console. Use Next and Previous to go at your own pace, or Auto Play to step automatically.',
   'learn.p3':
-    "CodeVision understands a small part of C: int and float variables, one- and two-dimensional arrays, if / else, for and while loops, functions and printf. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
+    "CodeVision understands a small part of C: int and float variables, one- and two-dimensional arrays, if / else, for and while loops, functions, printf and puts for output, and scanf for input (type the values into the Input field under the editor before pressing Run). If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
 }
 
 export type TranslationKey = keyof typeof en
@@ -335,6 +351,9 @@ const uz: Record<TranslationKey, string> = {
   'button.pause': 'Pauza',
 
   'editor.language': 'Dasturlash tili',
+  'editor.input': 'Kiritish',
+  'editor.inputHint': "scanf uchun qiymatlar, bo'sh joy bilan ajratilgan, masalan 5 2.5",
+  'editor.inputEdit': "O'zgartirish",
   'layout.resize': "Panellar o'lchamini o'zgartirish. Chap va o'ng strelka tugmalaridan foydalaning.",
   'layout.expandEditor': 'Kod muharririni kengaytirish',
   'layout.expandExecution': 'Bajarilish panelini kengaytirish',
@@ -368,8 +387,8 @@ const uz: Record<TranslationKey, string> = {
   'construct.string': 'satr',
   'construct.char': 'belgi {text}',
   'construct.cast': "turni o'zgartirish (cast)",
-  'construct.printfInExpr': 'ifoda ichidagi printf',
-  'construct.placeholder': "printf o'rinbosari {placeholder}",
+  'construct.printfInExpr': 'ifoda ichidagi {name}',
+  'construct.placeholder': "{fn} o'rinbosari {placeholder}",
   'construct.escape': '{escape} maxsus belgisi',
   'construct.recursion': 'rekursiya',
 
@@ -395,7 +414,8 @@ const uz: Record<TranslationKey, string> = {
   'unsupported.pointer': "Ko'rsatkichlar (pointer) hali qo'llab-quvvatlanmaydi.",
   'unsupported.globalVariable': "Global o'zgaruvchilar hali qo'llab-quvvatlanmaydi. {name} ni funksiya ichida e'lon qiling.",
   'unsupported.mainParams': "Parametrli main() (argc, argv) qo'llab-quvvatlanmaydi. int main() dan foydalaning.",
-  'unsupported.printfInExpr': "printf alohida buyruq bo'lishi kerak.",
+  'unsupported.printfInExpr': "{name} alohida buyruq bo'lishi kerak.",
+  'unsupported.scanfPlaceholder': "scanf o'rinbosari {placeholder} hali qo'llab-quvvatlanmaydi. Faqat %d va %f ishlaydi.",
   'unsupported.cast': "(float)x kabi turni o'zgartirishlar hali qo'llab-quvvatlanmaydi.",
   'unsupported.char': "Belgilar (char) hali qo'llab-quvvatlanmaydi. int yoki float dan foydalaning.",
   'unsupported.placeholder': "printf o'rinbosari {placeholder} hali qo'llab-quvvatlanmaydi. Faqat %d, %f va %s ishlaydi.",
@@ -404,7 +424,7 @@ const uz: Record<TranslationKey, string> = {
   'unsupported.include': "Faqat #include <stdio.h> qo'llab-quvvatlanadi. Boshqa kutubxonalar hali mavjud emas.",
   'unsupported.directive': "#define kabi preprotsessor direktivalari hali qo'llab-quvvatlanmaydi.",
   'unsupported.escape': "{escape} maxsus belgisi hali qo'llab-quvvatlanmaydi. Satrlarda faqat \\n ishlaydi.",
-  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud yagona kutubxona funksiyasi — printf.",
+  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud kutubxona funksiyalari — printf, puts va scanf.",
   'unsupported.recursion':
     "{name} hali bajarilayotgan paytda yana chaqirilmoqda (rekursiya). Rekursiya hali qo'llab-quvvatlanmaydi. Uning o'rniga sikldan foydalaning.",
 
@@ -475,6 +495,17 @@ const uz: Record<TranslationKey, string> = {
   'codeError.printfCount': "printf matnida {placeholders} ta o'rinbosar (%d, %f, %s) bor, lekin {given} ta qiymat berildi.",
   'codeError.printfS': '%s ga "hello" kabi matnli satr kerak. Sonlar uchun %d yoki %f dan foydalaning.',
   'codeError.printfNumber': '{specifier} ga son kerak, lekin matnli satr berildi. Matn uchun %s dan foydalaning.',
+  'codeError.putsText': 'puts ga matnli satr kerak, masalan puts("hello").',
+  'codeError.scanfFormat': `scanf ga avval bitta o'rinbosarli matnli satr kerak, masalan scanf("%d", &x).`,
+  'codeError.scanfCount': "scanf matnida {placeholders} ta o'rinbosar (%d, %f) bor, lekin {given} ta o'zgaruvchi berildi.",
+  'codeError.scanfValue': 'Bu scanf chaqiruvidagi {count} ta qiymatdan {position}-qiymat: {problem}',
+  'codeError.scanfAmpersand': `scanf to'ldiradigan o'zgaruvchi oldidan & kerak, masalan scanf("%d", &{name}).`,
+  'codeError.scanfNoInput':
+    "Kiritilgan qiymatlar yetarli emas: bu scanf {needed}-qiymatni kutyapti, lekin Kiritish maydonida faqat {given} ta qiymat bor. Har bir scanf uchun bittadan qiymatni bo'sh joy bilan ajratib kiriting.",
+  'codeError.scanfIntIntoFloat': "%d int o'qiydi, lekin {target} float. Uning o'rniga %f dan foydalaning.",
+  'codeError.scanfFloatIntoInt': "%f float o'qiydi, lekin {target} int. Uning o'rniga %d dan foydalaning.",
+  'codeError.scanfNotInt': `Kiritish maydonidagi "{value}" butun son emas, shuning uchun %d uni o'qiy olmaydi.`,
+  'codeError.scanfNotNumber': `Kiritish maydonidagi "{value}" son emas, shuning uchun %f uni o'qiy olmaydi.`,
   'found.eof': 'fayl oxiri',
   'found.string': 'satr',
   'found.token': '"{text}"',
@@ -542,6 +573,7 @@ const uz: Record<TranslationKey, string> = {
   'explain.printNewline': "Yangi qatorga o'tish belgisini chiqaramiz, keyingi natija yangi qatordan boshlanadi.",
   'explain.printLine': `"{text}" ni chiqaramiz va yangi qatorga o'tamiz.`,
   'explain.print': '"{text}" ni chiqaramiz.',
+  'explain.scan': "Kiritishdan {value} ni o'qiymiz va uni {target} ga saqlaymiz.",
 
   'step.declareIntArray': "{size} ta elementli butun sonlar massivi {name} ni e'lon qilamiz.",
   'step.declareCounter': "Sikl hisoblagichi {name} ni e'lon qilamiz. Uning hali qiymati yo'q.",
@@ -628,7 +660,7 @@ const uz: Record<TranslationKey, string> = {
   'learn.p2':
     "Joriy qadamda o'zgargan o'zgaruvchilar ko'k chiziq bilan belgilanadi. Dastur massiv bo'ylab yurganda, massiv ko'rinishi ishlatilayotgan elementni belgilaydi, sikl kuzatuvchisi esa takrorlanishlarni sanaydi. printf bilan chiqarilgan hamma narsa konsolda paydo bo'ladi. O'z sur'atingizda yurish uchun Keyingi va Oldingi tugmalaridan, avtomatik qadamlash uchun esa Avto ijrodan foydalaning.",
   'learn.p3':
-    "CodeVision C tilining kichik bir qismini tushunadi: int va float o'zgaruvchilar, bir va ikki o'lchovli massivlar, if / else, for va while sikllari, funksiyalar va printf. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
+    "CodeVision C tilining kichik bir qismini tushunadi: int va float o'zgaruvchilar, bir va ikki o'lchovli massivlar, if / else, for va while sikllari, funksiyalar, chiqarish uchun printf va puts, kiritish uchun scanf (qiymatlarni Ishga tushirishdan oldin muharrir ostidagi Kiritish maydoniga yozing). Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
 }
 
 const ru: Record<TranslationKey, string> = {
@@ -650,6 +682,9 @@ const ru: Record<TranslationKey, string> = {
   'button.pause': 'Пауза',
 
   'editor.language': 'Язык программирования',
+  'editor.input': 'Ввод',
+  'editor.inputHint': 'Значения для scanf через пробел, например 5 2.5',
+  'editor.inputEdit': 'Изменить',
   'layout.resize': 'Изменить размер панелей. Используйте стрелки влево и вправо.',
   'layout.expandEditor': 'Развернуть редактор кода',
   'layout.expandExecution': 'Развернуть панель выполнения',
@@ -683,8 +718,8 @@ const ru: Record<TranslationKey, string> = {
   'construct.string': 'строка',
   'construct.char': 'символ {text}',
   'construct.cast': 'приведение типа',
-  'construct.printfInExpr': 'printf внутри выражения',
-  'construct.placeholder': 'шаблон printf {placeholder}',
+  'construct.printfInExpr': '{name} внутри выражения',
+  'construct.placeholder': 'шаблон {fn} {placeholder}',
   'construct.escape': 'escape-последовательность {escape}',
   'construct.recursion': 'рекурсия',
 
@@ -710,7 +745,8 @@ const ru: Record<TranslationKey, string> = {
   'unsupported.pointer': 'Указатели пока не поддерживаются.',
   'unsupported.globalVariable': 'Глобальные переменные пока не поддерживаются. Объявите {name} внутри функции.',
   'unsupported.mainParams': 'main() с параметрами (argc, argv) не поддерживается. Используйте int main().',
-  'unsupported.printfInExpr': 'printf должен быть отдельной инструкцией.',
+  'unsupported.printfInExpr': '{name} должен быть отдельной инструкцией.',
+  'unsupported.scanfPlaceholder': 'Шаблон scanf {placeholder} пока не поддерживается. Работают только %d и %f.',
   'unsupported.cast': 'Приведения типов вроде (float)x пока не поддерживаются.',
   'unsupported.char': 'Символы (char) пока не поддерживаются. Используйте int или float.',
   'unsupported.placeholder': 'Шаблон printf {placeholder} пока не поддерживается. Работают только %d, %f и %s.',
@@ -719,7 +755,7 @@ const ru: Record<TranslationKey, string> = {
   'unsupported.include': 'Поддерживается только #include <stdio.h>. Другие библиотеки пока недоступны.',
   'unsupported.directive': 'Директивы препроцессора вроде #define пока не поддерживаются.',
   'unsupported.escape': 'Escape-последовательность {escape} пока не поддерживается. В строках работает только \\n.',
-  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступна только printf.',
+  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступны только printf, puts и scanf.',
   'unsupported.recursion':
     '{name} вызывается снова, пока ещё выполняется (рекурсия). Рекурсия пока не поддерживается. Используйте цикл.',
 
@@ -790,6 +826,17 @@ const ru: Record<TranslationKey, string> = {
   'codeError.printfCount': 'Шаблонов (%d, %f, %s) в тексте printf: {placeholders}, а передано значений: {given}.',
   'codeError.printfS': '%s нужна текстовая строка вроде "hello". Для чисел используйте %d или %f.',
   'codeError.printfNumber': '{specifier} нужно число, а передана текстовая строка. Для текста используйте %s.',
+  'codeError.putsText': 'puts нужна текстовая строка, например puts("hello").',
+  'codeError.scanfFormat': 'scanf сначала нужна текстовая строка с одним шаблоном, например scanf("%d", &x).',
+  'codeError.scanfCount': 'В тексте scanf {placeholders} шаблон(ов) (%d, %f), а передано переменных: {given}.',
+  'codeError.scanfValue': 'Значение {position} из {count} в этом вызове scanf: {problem}',
+  'codeError.scanfAmpersand': 'scanf нужен & перед заполняемой переменной, например scanf("%d", &{name}).',
+  'codeError.scanfNoInput':
+    'Недостаточно входных значений: этому scanf нужно значение номер {needed}, а в поле «Ввод» их только {given}. Введите по одному значению на каждый scanf через пробел.',
+  'codeError.scanfIntIntoFloat': '%d читает int, а {target} имеет тип float. Используйте %f.',
+  'codeError.scanfFloatIntoInt': '%f читает float, а {target} имеет тип int. Используйте %d.',
+  'codeError.scanfNotInt': '"{value}" из поля «Ввод» не целое число, поэтому %d не может его прочитать.',
+  'codeError.scanfNotNumber': '"{value}" из поля «Ввод» не число, поэтому %f не может его прочитать.',
   'found.eof': 'конец файла',
   'found.string': 'строка',
   'found.token': '"{text}"',
@@ -857,6 +904,7 @@ const ru: Record<TranslationKey, string> = {
   'explain.printNewline': 'Выводим перенос строки, поэтому следующий вывод начнётся с новой строки.',
   'explain.printLine': 'Выводим "{text}" и переходим на новую строку.',
   'explain.print': 'Выводим "{text}".',
+  'explain.scan': 'Читаем {value} из ввода и сохраняем в {target}.',
 
   'step.declareIntArray': 'Объявляем целочисленный массив {name} размером {size}.',
   'step.declareCounter': 'Объявляем счётчик цикла {name}. Значения у него пока нет.',
@@ -942,7 +990,7 @@ const ru: Record<TranslationKey, string> = {
   'learn.p2':
     'Переменные, изменившиеся на текущем шаге, обведены синим. Когда программа проходит по массиву, вид массива отмечает используемый элемент, а счётчик цикла считает итерации. Всё, что выведено через printf, появляется в консоли. Переходите по шагам кнопками «Далее» и «Назад» в своём темпе или включите «Автошаг».',
   'learn.p3':
-    'CodeVision понимает небольшую часть языка C: переменные int и float, одномерные и двумерные массивы, if / else, циклы for и while, функции и printf. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
+    'CodeVision понимает небольшую часть языка C: переменные int и float, одномерные и двумерные массивы, if / else, циклы for и while, функции, printf и puts для вывода и scanf для ввода (значения введите в поле «Ввод» под редактором до нажатия «Запустить»). Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
 }
 
 export const translations: Record<Locale, Record<TranslationKey, string>> = { en, uz, ru }

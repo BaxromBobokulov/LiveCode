@@ -1,4 +1,5 @@
-import { CodeError, UnsupportedConstructError, code, type RunError } from './errors'
+import type { TranslationKey } from '../i18n/translations'
+import { CodeError, UnsupportedConstructError, code, scanfReadError, type RunError } from './errors'
 import { explain, type Shown, type StepFact } from './explain'
 import {
   formatNumber,
@@ -24,7 +25,7 @@ const MAX_ARRAY_SIZE = 100
 
 // Common C library functions, so calling one gives "not supported yet" rather than "doesn't exist".
 const libraryFunctions = new Set([
-  'scanf', 'puts', 'putchar', 'getchar', 'gets', 'fgets', 'fprintf', 'sprintf',
+  'putchar', 'getchar', 'gets', 'fgets', 'fprintf', 'sprintf',
   'malloc', 'calloc', 'realloc', 'free', 'exit', 'abs', 'rand', 'srand', 'atoi',
   'strlen', 'strcpy', 'strcat', 'strcmp', 'memset', 'memcpy',
   'sqrt', 'pow', 'fabs', 'floor', 'ceil', 'sin', 'cos', 'tan', 'log', 'exp',
@@ -58,13 +59,19 @@ type Returned = { value: number | null }
 /** The result of running a statement whose step is described as part of something else (a loop header). */
 type Effect = { facts: StepFact[]; changed: string[] }
 
+/** Whether the code calls scanf, so the Playground knows to show the Input field. */
+export function usesScanf(source: string): boolean {
+  return /\bscanf\s*\(/.test(source)
+}
+
 /**
  * Runs the user's C code and returns one Step per meaningful statement, or the
- * error that stopped it. Never throws.
+ * error that stopped it. Never throws. `input` is the Input field's text: the
+ * values scanf reads, separated by spaces, in the order the program asks for them.
  */
-export function runUserCode(source: string): { steps: Step[] } | { error: RunError } {
+export function runUserCode(source: string, input = ''): { steps: Step[] } | { error: RunError } {
   try {
-    return { steps: execute(parse(source)) }
+    return { steps: execute(parse(source), input.split(/\s+/).filter((value) => value !== '')) }
   } catch (error) {
     if (error instanceof UnsupportedConstructError || error instanceof CodeError) return { error }
     return { error: new CodeError(1, 'codeError.internal') }
@@ -118,11 +125,13 @@ function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: num
   }
 }
 
-/** Runs a parsed program from main() and records its steps. */
-export function execute(program: Program): Step[] {
+/** Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order. */
+export function execute(program: Program, input: string[] = []): Step[] {
   const steps: Step[] = []
   const frames: Frame[] = []
   let output = ''
+  /** How many input values scanf has used so far. */
+  let inputUsed = 0
   /** The array element or 2D cell the current statement read or wrote. It is shown as active in the array view. */
   let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell } | null = null
   /** 2D cells the current statement read, explained before what the statement did. */
@@ -633,6 +642,33 @@ export function execute(program: Program): Step[] {
         })
         output += text
         emit(stmt.line, { kind: 'print', text })
+        return null
+      }
+
+      // Each value read is its own step, so scanf("%d %d", &a, &b) shows a and b filled one after the other.
+      case 'scanf': {
+        stmt.reads.forEach(({ specifier, target: targetExpr }, i) => {
+          const fail = (key: TranslationKey, values: Phrase['values']) =>
+            scanfReadError(stmt.line, i + 1, stmt.reads.length, key, values)
+
+          if (inputUsed >= input.length) {
+            throw fail('codeError.scanfNoInput', { needed: inputUsed + 1, given: input.length })
+          }
+          const text = input[inputUsed++]
+          const target = resolveTarget(targetExpr)
+          if (specifier === 'd' && target.type !== 'int') {
+            throw fail('codeError.scanfIntIntoFloat', { target: toSource(targetExpr) })
+          }
+          if (specifier === 'f' && target.type !== 'float') {
+            throw fail('codeError.scanfFloatIntoInt', { target: toSource(targetExpr) })
+          }
+          const isValid = specifier === 'd' ? /^[+-]?\d+$/.test(text) : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text)
+          if (!isValid) {
+            throw fail(specifier === 'd' ? 'codeError.scanfNotInt' : 'codeError.scanfNotNumber', { value: text })
+          }
+          const stored = target.write(Number(text))
+          emit(stmt.line, { kind: 'scan', target: target.label, value: formatNumber(stored, target.type) }, [targetExpr.name])
+        })
         return null
       }
 

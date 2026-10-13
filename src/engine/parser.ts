@@ -1,4 +1,4 @@
-import { CodeError, UnsupportedConstructError, code } from './errors'
+import { CodeError, UnsupportedConstructError, code, scanfReadError } from './errors'
 import { tokenize, type Token } from './lexer'
 import type { Phrase } from './types'
 
@@ -48,6 +48,8 @@ export type Stmt =
   | { kind: 'update'; line: number; target: Target; op: '++' | '--' }
   | { kind: 'expr'; line: number; expr: Expr }
   | { kind: 'printf'; line: number; format: string; args: PrintfArg[] }
+  /** `scanf("%d %f", &a, &b)`: each read takes the next value from the Input field, left to right. */
+  | { kind: 'scanf'; line: number; reads: { specifier: 'd' | 'f'; target: Target }[] }
   | { kind: 'if'; line: number; cond: Expr; then: Stmt; otherwise: Stmt | null }
   | { kind: 'while'; line: number; cond: Expr; body: Stmt }
   | { kind: 'for'; line: number; init: Stmt | null; cond: Expr | null; update: Stmt | null; body: Stmt }
@@ -407,6 +409,8 @@ export function parse(source: string): Program {
     if (is('else')) throw new CodeError(line, 'codeError.elseWithoutIf')
 
     if (token.kind === 'identifier' && token.text === 'printf' && is('(', 1)) return parsePrintf()
+    if (token.kind === 'identifier' && token.text === 'puts' && is('(', 1)) return parsePuts()
+    if (token.kind === 'identifier' && token.text === 'scanf' && is('(', 1)) return parseScanf()
 
     const statement = parseSimpleStatement()
     expect(';')
@@ -578,6 +582,48 @@ export function parse(source: string): Program {
     return { kind: 'printf', line, format: formatToken.text, args }
   }
 
+  /** `puts("text");` is read as `printf("%s\n", "text");`, so it prints the text as-is and ends the line. */
+  function parsePuts(): Stmt {
+    const line = advance().line // puts
+    expect('(')
+    const textToken = peek()
+    if (textToken.kind !== 'string') throw new CodeError(textToken.line, 'codeError.putsText')
+    advance()
+    expect(')')
+    expect(';')
+    return { kind: 'printf', line, format: '%s\n', args: [{ kind: 'text', line, value: textToken.text }] }
+  }
+
+  /** `scanf("%d %f", &a, &b);` — one %d or %f placeholder per variable, each read in turn. */
+  function parseScanf(): Stmt {
+    const line = advance().line // scanf
+    expect('(')
+    const formatToken = peek()
+    if (formatToken.kind !== 'string') throw new CodeError(formatToken.line, 'codeError.scanfFormat')
+    advance()
+
+    const specifiers = readFormatSpecifiers(formatToken.text, line, 'scanf') as ('d' | 'f')[]
+    if (specifiers.length === 0) throw new CodeError(line, 'codeError.scanfFormat')
+
+    const targets: Target[] = []
+    while (accept(',')) {
+      if (!accept('&')) {
+        throw scanfReadError(peek().line, targets.length + 1, specifiers.length, 'codeError.scanfAmpersand', {
+          name: peek().text,
+        })
+      }
+      targets.push(parseTarget())
+    }
+    expect(')')
+    expect(';')
+
+    if (targets.length !== specifiers.length) {
+      throw new CodeError(line, 'codeError.scanfCount', { placeholders: specifiers.length, given: targets.length })
+    }
+    const reads = targets.map((target, i) => ({ specifier: specifiers[i], target }))
+    return { kind: 'scanf', line, reads }
+  }
+
   // ----- Expressions (precedence climbing) -----
 
   function parseExpression(): Expr {
@@ -627,8 +673,12 @@ export function parse(source: string): Program {
     if (token.kind === 'identifier') {
       advance()
       if (accept('(')) {
-        if (token.text === 'printf') {
-          throw new UnsupportedConstructError(token.line, { key: 'construct.printfInExpr' }, { key: 'unsupported.printfInExpr' })
+        if (token.text === 'printf' || token.text === 'puts' || token.text === 'scanf') {
+          throw new UnsupportedConstructError(
+            token.line,
+            { key: 'construct.printfInExpr', values: { name: token.text } },
+            { key: 'unsupported.printfInExpr', values: { name: token.text } },
+          )
         }
         const args: Expr[] = []
         while (!is(')')) {
@@ -663,8 +713,8 @@ export function parse(source: string): Program {
   }
 }
 
-/** Returns the conversion letters in a printf format ("d", "f", "s"), rejecting any others. */
-function readFormatSpecifiers(format: string, line: number): string[] {
+/** Returns the conversion letters in a printf or scanf format ("d", "f", and "s" for printf), rejecting any others. */
+function readFormatSpecifiers(format: string, line: number, fn: 'printf' | 'scanf' = 'printf'): string[] {
   const specifiers: string[] = []
   for (let i = 0; i < format.length; i++) {
     if (format[i] !== '%') continue
@@ -675,11 +725,12 @@ function readFormatSpecifiers(format: string, line: number): string[] {
     // Read up to the conversion letter so "%.2f" or "%5d" is reported as a whole.
     const match = /^%[^A-Za-z%]*[A-Za-z]?/.exec(format.slice(i))
     const placeholder = match ? match[0] : '%'
-    if (placeholder !== '%d' && placeholder !== '%f' && placeholder !== '%s') {
+    const allowed = fn === 'printf' ? ['%d', '%f', '%s'] : ['%d', '%f']
+    if (!allowed.includes(placeholder)) {
       throw new UnsupportedConstructError(
         line,
-        { key: 'construct.placeholder', values: { placeholder } },
-        { key: 'unsupported.placeholder', values: { placeholder } },
+        { key: 'construct.placeholder', values: { placeholder, fn } },
+        { key: fn === 'printf' ? 'unsupported.placeholder' : 'unsupported.scanfPlaceholder', values: { placeholder } },
       )
     }
     specifiers.push(placeholder[1])

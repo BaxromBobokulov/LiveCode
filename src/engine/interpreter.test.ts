@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { examples } from '../data/examples'
 import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
-import { CodeError, UnsupportedConstructError } from './errors'
+import { CodeError, UnsupportedConstructError, isMissingInput } from './errors'
 import { runUserCode } from './interpreter'
 import type { Step } from './types'
 
@@ -267,5 +267,95 @@ describe('runUserCode', () => {
     expect('error' in result && result.error).toBeInstanceOf(CodeError)
     expect('error' in result && result.error.line).toBe(2)
     expect('error' in result && result.error.text.key).toBe('codeError.divisionByZero')
+  })
+
+  it('prints a puts line followed by a newline, with no placeholders', () => {
+    const steps = stepsOf(lines('int main() {', '    puts("100% done");', '    puts("hello");', '    return 0;', '}'))
+
+    expect(steps[1].output).toBe('100% done\nhello\n')
+    expect(english(steps[1])).toBe('Print "hello" and move to a new line.')
+  })
+
+  it('reads scanf values from the input in the order the program runs them', () => {
+    const source = lines(
+      'int main() {',
+      '    int n;',
+      '    scanf("%d", &n);',
+      '    int sum = 0;',
+      '    for (int i = 0; i < n; i++) {',
+      '        sum += i;',
+      '    }',
+      '    float x;',
+      '    scanf("%f", &x);',
+      '    printf("%d %f\\n", sum, x);',
+      '    return 0;',
+      '}',
+    )
+    const result = runUserCode(source, ' 3   2.5 ')
+    if ('error' in result) throw new Error(result.error.message)
+    const reads = result.steps.filter((s) => s.line === 3 || s.line === 9)
+
+    expect(english(reads[0])).toBe('Read 3 from the input and store it in n.')
+    expect(reads[0].changed).toEqual(['n'])
+    expect(reads[1].variables).toContainEqual({ name: 'x', value: '2.5' })
+    expect(result.steps.at(-1)?.output).toBe('3 2.500000\n')
+  })
+
+  it('reports missing scanf input as a code error', () => {
+    const source = lines('int main() {', '    int a;', '    int b;', '    scanf("%d", &a);', '    scanf("%d", &b);', '    return 0;', '}')
+
+    for (const input of ['', '7']) {
+      const result = runUserCode(source, input)
+      expect('error' in result && result.error).toBeInstanceOf(CodeError)
+      expect('error' in result && result.error.text.key).toBe('codeError.scanfNoInput')
+    }
+    const result = runUserCode(source)
+    expect('error' in result && result.error.line).toBe(4)
+  })
+
+  it('reads several scanf values in one call, one step per value', () => {
+    const source = lines('int main() {', '    int a;', '    float b;', '    scanf("%d %f", &a, &b);', '    return 0;', '}')
+    const result = runUserCode(source, '7 1.5')
+    if ('error' in result) throw new Error(result.error.message)
+    const reads = result.steps.filter((s) => s.line === 4)
+
+    expect(reads.map(english)).toEqual([
+      'Read 7 from the input and store it in a.',
+      'Read 1.5 from the input and store it in b.',
+    ])
+    expect(reads.map((s) => s.changed)).toEqual([['a'], ['b']])
+  })
+
+  it('tells missing Input values apart from other scanf errors', () => {
+    const errorFor = (source: string, input: string) => {
+      const result = runUserCode(source, input)
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error
+    }
+    const one = lines('int main() {', '    int a;', '    scanf("%d", &a);', '    return 0;', '}')
+    const two = lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, &b);', '    return 0;', '}')
+
+    expect(isMissingInput(errorFor(one, ''))).toBe(true)
+    expect(isMissingInput(errorFor(two, '1'))).toBe(true)
+    expect(isMissingInput(errorFor(one, 'x'))).toBe(false)
+    expect(isMissingInput(errorFor(two, '1 x'))).toBe(false)
+  })
+
+  it('says which value of a scanf call failed', () => {
+    const source = lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, &b);', '    return 0;', '}')
+    const result = runUserCode(source, '1')
+
+    expect('error' in result && result.error).toBeInstanceOf(CodeError)
+    if (!('error' in result)) return
+    expect(result.error.line).toBe(3)
+    expect(formatPhrase(translations.en, result.error.text)).toMatch(
+      /^Value 2 of 2 in this scanf call: Not enough input values/,
+    )
+
+    const missingAmpersand = runUserCode(lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, b);', '}'), '1 2')
+    expect('error' in missingAmpersand && missingAmpersand.error.text).toMatchObject({
+      key: 'codeError.scanfValue',
+      values: { position: 2, problem: { key: 'codeError.scanfAmpersand' } },
+    })
   })
 })

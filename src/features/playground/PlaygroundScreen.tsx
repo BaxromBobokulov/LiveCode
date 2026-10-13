@@ -1,5 +1,6 @@
 import { animate, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { SPLIT_KEY_STEP, SPLIT_MAX, SPLIT_MIN } from '../../constants/layout'
 import { AUTOPLAY_DELAY_MS, RUN_SCROLL_DELAY_MS, RUN_SCROLL_DURATION_S } from '../../constants/playback'
 import { useTranslation } from '../../i18n/useTranslation'
@@ -9,10 +10,12 @@ import EditorPanel from './EditorPanel'
 import ExecutionPanel from './ExecutionPanel'
 
 /**
- * After a short pause, scrolls the page so `panel` sits at the top (minus its scroll-margin),
- * easing out so it starts quickly and settles gently. Returns a function that cancels it.
+ * After a short pause, scrolls the page so `element` sits at the top (minus its scroll-margin)
+ * or, with `block: 'center'`, in the middle of the screen, easing out so it starts quickly and
+ * settles gently. A centered element that is already fully on screen isn't scrolled to.
+ * Returns a function that cancels it.
  */
-function scrollToPanel(panel: HTMLElement): () => void {
+function scrollToElement(element: HTMLElement, block: 'start' | 'center' = 'start'): () => void {
   let controls: ReturnType<typeof animate> | null = null
 
   const cancel = () => {
@@ -23,10 +26,15 @@ function scrollToPanel(panel: HTMLElement): () => void {
   }
 
   const timer = setTimeout(() => {
-    // Measured now, after the Run result has rendered, so the target is where the panel really is.
-    const margin = parseFloat(getComputedStyle(panel).scrollMarginTop) || 0
+    // Measured now, after the Run result has rendered, so the target is where the element really is.
+    const box = element.getBoundingClientRect()
+    if (block === 'center' && box.top >= 0 && box.bottom <= window.innerHeight) return cancel()
+    const offset =
+      block === 'center'
+        ? (window.innerHeight - box.height) / 2
+        : parseFloat(getComputedStyle(element).scrollMarginTop) || 0
     const maxY = document.documentElement.scrollHeight - window.innerHeight
-    const target = Math.min(window.scrollY + panel.getBoundingClientRect().top - margin, maxY)
+    const target = Math.max(0, Math.min(window.scrollY + box.top - offset, maxY))
     controls = animate(window.scrollY, target, {
       duration: RUN_SCROLL_DURATION_S,
       ease: [0.22, 1, 0.36, 1], // ease-out
@@ -50,6 +58,7 @@ function PlaygroundScreen() {
   const run = usePlaygroundStore((state) => state.run)
   const layoutRef = useRef<HTMLDivElement>(null)
   const executionRef = useRef<HTMLElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const cancelScroll = useRef<(() => void) | null>(null)
   const reduceMotion = useReducedMotion()
   const splitRatio = useSettingsStore((state) => state.splitRatio)
@@ -70,8 +79,19 @@ function PlaygroundScreen() {
   useEffect(() => () => cancelScroll.current?.(), [])
 
   function handleRun() {
-    run()
+    // Rendered right away, so a collapsed Input field that a failed Run opens up is there to focus below.
+    flushSync(run)
     cancelScroll.current?.()
+
+    // scanf ran out of values: show the user the Input field, on any screen size, and put the cursor in it.
+    const inputField = inputRef.current
+    if (usePlaygroundStore.getState().inputMissing && inputField) {
+      inputField.focus({ preventScroll: true })
+      if (reduceMotion) inputField.scrollIntoView({ block: 'nearest' })
+      else cancelScroll.current = scrollToElement(inputField, 'center')
+      return
+    }
+
     // On narrow screens the panels stack (flex-col below the min-[1000px] breakpoint), so the
     // Execution panel sits under the editor. Bring it into view so Run visibly does something.
     const layout = layoutRef.current
@@ -79,7 +99,7 @@ function PlaygroundScreen() {
     // Skipped while the editor is expanded: the Execution panel is hidden then.
     if (maximized || !layout || !panel || getComputedStyle(layout).flexDirection !== 'column') return
     if (reduceMotion) panel.scrollIntoView({ block: 'start' })
-    else cancelScroll.current = scrollToPanel(panel)
+    else cancelScroll.current = scrollToElement(panel)
   }
 
   function toggleMaximize(panel: PanelId) {
@@ -128,6 +148,7 @@ function PlaygroundScreen() {
     >
       <EditorPanel
         onRun={handleRun}
+        inputRef={inputRef}
         isMaximized={maximized === 'editor'}
         onToggleMaximize={() => toggleMaximize('editor')}
         className={maximized === 'execution' ? 'hidden' : maximized === null ? editorSplitClass : ''}

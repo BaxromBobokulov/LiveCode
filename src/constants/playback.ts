@@ -1,7 +1,10 @@
 /** How long Auto Play waits on each step before moving to the next one. */
 export const AUTOPLAY_DELAY_MS = 1000
 
-/** On narrow screens, how long Run waits before scrolling to the Execution panel, so the press registers first. */
+/**
+ * How long Run waits before scrolling, so the press registers first: to the Execution panel on
+ * narrow screens, or to the scanf Input field when it is missing values.
+ */
 export const RUN_SCROLL_DELAY_MS = 120
 
 /** How long that scroll takes, in seconds. */

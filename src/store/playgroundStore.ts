@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
-import { UnsupportedConstructError, type RunError } from '../engine/errors'
-import { runUserCode } from '../engine/interpreter'
+import { UnsupportedConstructError, isMissingInput, type RunError } from '../engine/errors'
+import { runUserCode, usesScanf } from '../engine/interpreter'
 import { track } from '../lib/analytics'
 import type { ExampleProgram } from '../engine/types'
 
@@ -18,14 +18,23 @@ type PlaygroundState = {
   userProgram: ExampleProgram | null
   /** Why the last Run failed. The previous trace stays on screen. */
   runError: RunError | null
+  /** The Input field's text: the values scanf reads, separated by spaces. */
+  input: string
+  /** The last Run failed for lack of Input values. The field shows an error state until the user types or a Run succeeds. */
+  inputMissing: boolean
+  /** The Input field is folded into a one-line summary of its values, after a Run that used them. */
+  inputCollapsed: boolean
 
   setTab: (tab: TabId) => void
   /** Load an example at its first step and switch to the Playground. */
   loadExample: (id: string) => void
   setCode: (code: string) => void
+  setInput: (input: string) => void
+  /** Open the collapsed Input summary back into the editable field. */
+  expandInput: () => void
   next: () => void
   prev: () => void
-  /** Go back to the first step and stop auto play. */
+  /** Go back to the first step, stop auto play, and empty the Input field (opened up again). */
   reset: () => void
   /** Trace the code in the editor and play it from the first step. */
   run: () => void
@@ -48,6 +57,9 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     code: examples[0].code.join('\n'),
     userProgram: null,
     runError: null,
+    input: '',
+    inputMissing: false,
+    inputCollapsed: false,
 
     // Leaving the Playground pauses auto play so it doesn't run unseen.
     setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
@@ -58,12 +70,18 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         code: getExample(id).code.join('\n'),
         userProgram: null,
         runError: null,
+        inputMissing: false,
+        inputCollapsed: false,
         stepIndex: 0,
         isPlaying: false,
         activeTab: 'playground',
       }),
 
     setCode: (code) => set({ code }),
+
+    setInput: (input) => set({ input, inputMissing: false }),
+
+    expandInput: () => set({ inputCollapsed: false }),
 
     next: () => {
       const nextIndex = Math.min(get().stepIndex + 1, lastStepIndex())
@@ -73,32 +91,42 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
 
     prev: () => set({ stepIndex: Math.max(get().stepIndex - 1, 0), isPlaying: false }),
 
-    reset: () => set({ stepIndex: 0, isPlaying: false }),
+    reset: () => set({ stepIndex: 0, isPlaying: false, input: '', inputMissing: false, inputCollapsed: false }),
 
     run: () => {
-      const { code, exampleId } = get()
+      const { code, exampleId, input } = get()
       const example = getExample(exampleId)
 
       // Unchanged example code plays its hand-authored trace.
       if (code === example.code.join('\n')) {
         track('code_run', { source: 'example' })
-        set({ userProgram: null, runError: null, stepIndex: 0, isPlaying: true })
+        set({ userProgram: null, runError: null, inputMissing: false, stepIndex: 0, isPlaying: true })
         return
       }
 
       track('code_run', { source: 'custom' })
-      const result = runUserCode(code)
+      const result = runUserCode(code, input)
       if ('error' in result) {
         track('code_run_error', {
           errorType: result.error instanceof UnsupportedConstructError ? 'UnsupportedConstructError' : 'CodeError',
         })
         // Keep the previous trace, back on its first step, and show what went wrong.
-        set({ runError: result.error, stepIndex: 0, isPlaying: false })
+        // The Input field opens up again, since the problem may be in its values.
+        set({
+          runError: result.error,
+          inputMissing: isMissingInput(result.error),
+          inputCollapsed: false,
+          stepIndex: 0,
+          isPlaying: false,
+        })
         return
       }
       set({
         userProgram: { id: 'user', title: 'Your Code', tag: 'Custom', code: code.split('\n'), steps: result.steps },
         runError: null,
+        inputMissing: false,
+        // The values were used, so fold them into a summary; there's nothing to fold when none were typed.
+        inputCollapsed: usesScanf(code) && input.trim() !== '',
         stepIndex: 0,
         isPlaying: true,
       })
