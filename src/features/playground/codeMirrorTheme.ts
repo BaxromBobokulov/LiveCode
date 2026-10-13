@@ -69,6 +69,11 @@ const editorChrome = EditorView.theme(
     // The currently executing line: a subtle light overlay plus the same 3px accent bar as light mode.
     '.cm-execLine': { backgroundColor: dark.execLine },
     '.cm-gutterElement.cm-execLine': { boxShadow: 'inset 3px 0 0 var(--color-accent)' },
+    // The same line in the error tone, when the last Run stopped on a CodeError/UnsupportedConstructError.
+    // A 7% mix of the error token, like execLine's 7% white (errorTint is a light-mode fill). It keeps
+    // every syntax color at 4.5:1 or more; the line number turns text-colored, as dimmed gray it would not.
+    '.cm-execLine-error': { backgroundColor: 'color-mix(in srgb, var(--color-error) 7%, transparent)' },
+    '.cm-gutterElement.cm-execLine-error': { boxShadow: 'inset 3px 0 0 var(--color-error)', color: dark.text },
 
     // Autocomplete dropdown, styled like VS Code's suggestion list.
     '.cm-tooltip.cm-tooltip-autocomplete': {
@@ -129,18 +134,29 @@ export const cLanguage = new LanguageSupport(
 )
 
 class ExecLineMarker extends GutterMarker {
-  elementClass = 'cm-execLine'
+  elementClass: string
+  constructor(elementClass: string) {
+    super()
+    this.elementClass = elementClass
+  }
 }
-const execLineMarker = new ExecLineMarker()
+const execLineMarkers = {
+  current: new ExecLineMarker('cm-execLine'),
+  error: new ExecLineMarker('cm-execLine cm-execLine-error'),
+}
 
-/** Highlights one line (1-based) in both the code and the line-number gutter. */
-export function execLineHighlight(line: number): Extension {
+/**
+ * Highlights one line (1-based) in both the code and the line-number gutter:
+ * blue for the current step, red for the line a Run stopped on with an error.
+ */
+export function execLineHighlight(line: number, tone: 'current' | 'error' = 'current'): Extension {
   const lineStart = (doc: EditorView['state']['doc']) => doc.line(Math.min(Math.max(line, 1), doc.lines)).from
+  const marker = execLineMarkers[tone]
 
   return [
     EditorView.decorations.compute(['doc'], (state) =>
-      Decoration.set([Decoration.line({ class: 'cm-execLine' }).range(lineStart(state.doc))]),
+      Decoration.set([Decoration.line({ class: marker.elementClass }).range(lineStart(state.doc))]),
     ),
-    gutterLineClass.compute(['doc'], (state) => RangeSet.of([execLineMarker.range(lineStart(state.doc))])),
+    gutterLineClass.compute(['doc'], (state) => RangeSet.of([marker.range(lineStart(state.doc))])),
   ]
 }

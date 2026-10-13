@@ -44,10 +44,14 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   const inputMissing = usePlaygroundStore((state) => state.inputMissing)
   const inputCollapsed = usePlaygroundStore((state) => state.inputCollapsed)
   const expandInput = usePlaygroundStore((state) => state.expandInput)
+  const runError = usePlaygroundStore((state) => state.runError)
   const { t, exampleText } = useTranslation()
   const inputId = useId()
 
   const step = example.steps[stepIndex]
+  // While the error box is showing, the editor points at the same line, in the error color.
+  const highlightLine = runError ? runError.line : step.line
+  const highlightTone = runError ? 'error' : 'current'
   // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) is added here explicitly.
   // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,
   // the same order CodeMirror's own basicSetup uses. autocompletion already binds Enter/Esc/arrows
@@ -61,9 +65,9 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
       Prec.high(keymap.of([{ key: 'Tab', run: acceptCompletion }])),
       keymap.of([...closeBracketsKeymap, ...defaultKeymap]),
       cLanguage,
-      execLineHighlight(step.line),
+      execLineHighlight(highlightLine, highlightTone),
     ],
-    [step.line],
+    [highlightLine, highlightTone],
   )
 
   return (
