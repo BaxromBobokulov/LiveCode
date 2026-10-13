@@ -81,6 +81,16 @@ const editorChrome = EditorView.theme(
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: dark.popupSelected, color: dark.text },
     '.cm-completionMatchedText': { color: dark.popupMatch, textDecoration: 'none', fontWeight: '600' },
     '.cm-completionDetail': { color: dark.popupDetail, fontStyle: 'normal', marginLeft: '12px' },
+    // The usage hint panel beside the highlighted suggestion.
+    '.cm-tooltip.cm-completionInfo': {
+      backgroundColor: dark.popup,
+      border: `1px solid ${dark.popupBorder}`,
+      color: dark.text,
+      fontFamily: 'var(--font-mono)',
+      fontSize: '12px',
+      padding: '4px 8px',
+      whiteSpace: 'pre',
+    },
   },
   { dark: true },
 )

@@ -19,12 +19,14 @@ function SpeedControl() {
         {playbackSpeeds.map((option) => {
           const isActive = option === speed
           return (
+            // The ::before is an invisible 44px-tall hit area centered on the 30px pill, so the touch
+            // target passes AGENTS.md's 44px rule while the row looks the same.
             <button
               key={option}
               type="button"
               aria-pressed={isActive}
               onClick={() => setSpeed(option)}
-              className={`rounded-control px-2 text-label tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+              className={`relative rounded-control px-2 before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''] text-label tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
                 isActive ? 'bg-panel text-text shadow-xs' : 'font-medium text-textMuted hover:text-text'
               }`}
             >
