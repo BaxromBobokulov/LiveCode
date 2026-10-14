@@ -424,4 +424,61 @@ describe('runUserCode', () => {
     expect(errorKey('    char s[3]; scanf("%s", &s);')).toBe('codeError.scanfSTarget')
     expect(errorKey('    char c; scanf("%d", &c);', '5')).toBe('codeError.scanfIntoChar')
   })
+
+  it('fills an array with rand() after srand(), the same numbers for the same seed', () => {
+    const source = lines(
+      '#include <stdio.h>',
+      '#include <stdlib.h>',
+      'int main() {',
+      '    int arr[5];',
+      '    srand(1);',
+      '    for (int i = 0; i < 5; i++) {',
+      '        arr[i] = rand() % 100;',
+      '    }',
+      '    return 0;',
+      '}',
+    )
+    const steps = stepsOf(source)
+
+    // C's own sample rand() gives 16838 first for seed 1.
+    expect(english(steps[1])).toBe(
+      'Seed the random numbers with 1. The same seed always gives the same rand() numbers, so this program gets the same values on every Run.',
+    )
+    const writes = steps.filter((s) => s.line === 7)
+    expect(english(writes[0])).toBe(
+      'rand() gives the next random number: 16838 (always between 0 and 32767). Set arr[0] to rand() % 100: 16838 % 100 = 38.',
+    )
+    const filled = steps.at(-1)!.array!.values as number[]
+    expect(filled[0]).toBe(38)
+    expect(filled.every((v) => v >= 0 && v < 100)).toBe(true)
+
+    // A fixed seed gives the very same trace on every Run, like a real C program.
+    expect(stepsOf(source)).toEqual(steps)
+  })
+
+  it('picks new rand() numbers on each Run when there is no srand()', () => {
+    const source = lines('int main() {', '    int a = rand();', '    int b = rand();', '    int c = rand();', '    return 0;', '}')
+    const values = (steps: Step[]) => steps[2].variables.map((v) => Number(v.value))
+    const first = values(stepsOf(source))
+    expect(first.every((v) => v >= 0 && v <= 32767)).toBe(true)
+    // Three numbers from 0 to 32767 all matching by chance is practically impossible.
+    expect(values(stepsOf(source))).not.toEqual(first)
+  })
+
+  it('checks how rand and srand are called', () => {
+    const error = (body: string) => {
+      const result = runUserCode(lines('int main() {', body, '    return 0;', '}'))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error
+    }
+
+    expect(error('    int x = rand(5);').text.key).toBe('codeError.argCount')
+    expect(error('    srand();').text.key).toBe('codeError.argCount')
+    expect(error('    int x = srand(1);').text.key).toBe('codeError.voidValue')
+    // The rest of <stdlib.h> is still not supported.
+    expect(error('    int n = atoi(5);').text).toEqual({ key: 'unsupported.libraryFunction', values: { name: 'atoi' } })
+    expect(runUserCode('#include <string.h>\nint main() { return 0; }')).toMatchObject({
+      error: { text: { key: 'unsupported.include' } },
+    })
+  })
 })

@@ -21,13 +21,16 @@ import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step } from './ty
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
 
+/** The largest number rand() gives, as in most C compilers' <stdlib.h>. */
+export const RAND_MAX = 32767
+
 /** Largest array (in total cells, for a 2D array) the array view can reasonably show. */
 const MAX_ARRAY_SIZE = 100
 
 // Common C library functions, so calling one gives "not supported yet" rather than "doesn't exist".
 const libraryFunctions = new Set([
   'putchar', 'getchar', 'gets', 'fgets', 'fprintf', 'sprintf',
-  'malloc', 'calloc', 'realloc', 'free', 'exit', 'abs', 'rand', 'srand', 'atoi',
+  'malloc', 'calloc', 'realloc', 'free', 'exit', 'abs', 'atoi',
   'strlen', 'strcpy', 'strcat', 'strcmp', 'memset', 'memcpy',
   'sqrt', 'pow', 'fabs', 'floor', 'ceil', 'sin', 'cos', 'tan', 'log', 'exp',
 ])
@@ -148,19 +151,27 @@ function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: num
   }
 }
 
-/** Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order. */
-export function execute(program: Program, input: string[] = []): Step[] {
+/**
+ * Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order.
+ * `seed` starts rand()'s sequence when the program never calls srand(); by default every Run gets a new one.
+ */
+export function execute(program: Program, input: string[] = [], seed = Math.floor(Math.random() * 2 ** 32)): Step[] {
   const steps: Step[] = []
   const frames: Frame[] = []
   let output = ''
   /** How many input values scanf has used so far. */
   let inputUsed = 0
   /**
+   * rand()'s state. Every rand() is worked out right here, while the whole trace is built in one go,
+   * so its number is fixed in the steps: Previous / Next / Auto Play replay it and never pick a new one.
+   */
+  let randomState = seed >>> 0
+  /**
    * The array the current statement used, and the element or 2D cell it read or wrote (shown as active
    * in the array view). `active` is null when it used the whole array, e.g. printf("%s", name).
    */
   let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell | null } | null = null
-  /** 2D cells the current statement read, explained before what the statement did. */
+  /** 2D cells the current statement read and rand() numbers it got, explained before what the statement did. */
   let cellReads: StepFact[] = []
   /**
    * A loop check whose body runs next, with the arrays as they were at the check. If the body's
@@ -250,6 +261,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
   function evaluateCall(expr: Extract<Expr, { kind: 'call' }>): Value | null {
     const fn = program.functions.get(expr.name)
     if (!fn) {
+      if (expr.name === 'rand' || expr.name === 'srand') return evaluateRandomCall(expr)
       if (libraryFunctions.has(expr.name)) {
         throw new UnsupportedConstructError(
           expr.line,
@@ -328,6 +340,33 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     if (result === null || fn.returnType === 'void') return null
     return { type: fn.returnType, value: result, work: formatNumber(result, fn.returnType) }
+  }
+
+  /**
+   * `rand()` and `srand(seed)` from <stdlib.h>, using the sample rand() given in the C standard itself.
+   * srand(seed) restarts the sequence, so the same seed always gives the same numbers.
+   */
+  function evaluateRandomCall(expr: Extract<Expr, { kind: 'call' }>): Value | null {
+    const expected = expr.name === 'rand' ? 0 : 1
+    if (expr.args.length !== expected) {
+      throw new CodeError(expr.line, 'codeError.argCount', { name: expr.name, expected, given: expr.args.length })
+    }
+
+    if (expr.name === 'srand') {
+      const seed = evaluate(expr.args[0])
+      const value = convert(seed.value, 'int')
+      randomState = value >>> 0
+      emit(expr.line, {
+        kind: 'srand',
+        seed: { source: toSource(expr.args[0]), work: seed.work, result: formatNumber(value, 'int') },
+      })
+      return null
+    }
+
+    randomState = (Math.imul(randomState, 1103515245) + 12345) >>> 0
+    const value = (randomState >>> 16) % (RAND_MAX + 1)
+    cellReads.push({ kind: 'rand', value: String(value) })
+    return { type: 'int', value, work: String(value) }
   }
 
   // ----- Variables -----
@@ -687,8 +726,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
         return null
 
       case 'expr':
-        // A call on its own line, like `greet();`, is shown through its call and return steps.
-        if (stmt.expr.kind === 'call') {
+        // A call on its own line, like `greet();`, is shown through its call and return steps
+        // (srand() records its own step). A lone `rand();` falls through and is shown as an expression.
+        if (stmt.expr.kind === 'call' && (stmt.expr.name !== 'rand' || program.functions.has('rand'))) {
           evaluateCall(stmt.expr)
           return null
         }

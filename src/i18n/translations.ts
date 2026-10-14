@@ -94,10 +94,10 @@ const en = {
   'unsupported.placeholder': 'The printf placeholder {placeholder} is not supported yet. Only %d, %f, %c and %s work.',
   'unsupported.array3d': 'Arrays with more than two dimensions are not supported yet.',
   'unsupported.string': 'Text strings can only be used in printf, in puts, or to set up a char array, e.g. char name[] = "hi";',
-  'unsupported.include': 'Only #include <stdio.h> is supported. Other libraries are not available yet.',
+  'unsupported.include': 'Only #include <stdio.h> and #include <stdlib.h> are supported. Other libraries are not available yet.',
   'unsupported.directive': 'Preprocessor directives like #define are not supported yet.',
   'unsupported.escape': `The escape {escape} is not supported yet. Only \\n, \\\\, \\" and \\' work, plus \\0 in a single character like '\\0'.`,
-  'unsupported.libraryFunction': '{name}() is not supported yet. The library functions available are printf, puts and scanf.',
+  'unsupported.libraryFunction': '{name}() is not supported yet. The library functions available are printf, puts, scanf, rand and srand.',
   'unsupported.recursion':
     '{name} is called again while it is still running (recursion). Recursion is not supported yet. Use a loop instead.',
 
@@ -228,6 +228,9 @@ const en = {
   'explain.declareGridEmpty':
     'Declare {type} 2D array {name} with {rows} rows and {cols} columns. They have no values yet (shown as 0).',
   'explain.readCell': 'Read {target} (value {value}).',
+  'explain.rand': 'rand() gives the next random number: {value} (always between 0 and 32767).',
+  'explain.srand':
+    'Seed the random numbers with {value}. The same seed always gives the same rand() numbers, so this program gets the same values on every Run.',
   'explain.assign': 'Set {target} to {value}.',
   'explain.increase': 'Increase {target} by 1. {target} is now {result}.',
   'explain.decrease': 'Decrease {target} by 1. {target} is now {result}.',
@@ -337,13 +340,13 @@ const en = {
   'example.user.title': 'Your Code',
 
   'learn.title': 'How CodeVision works',
-  // In the two paragraphs below, the words printf, puts and scanf are shown in the code font.
+  // In the two paragraphs below, the words printf, puts, scanf, rand and srand are shown in the code font.
   'learn.p1':
     'CodeVision runs a short C program one step at a time. Start from one of the Examples, or type or paste your own program into the Playground editor and press Run. Each step is one line: the editor highlights it and the Execution panel explains what it did in plain language.',
   'learn.p2':
     'Variables that changed on the current step are outlined in blue. When a program walks through an array, the array view marks the element in use and the loop tracker counts iterations. Anything printed with printf appears in the console. Use Next and Previous to go at your own pace, or Auto Play to step automatically.',
   'learn.p3':
-    "CodeVision understands a small part of C: int, float and char variables, one- and two-dimensional arrays, text stored in char arrays, if / else, for and while loops, functions, printf and puts for output, and scanf for input (type the values into the Input field under the editor before pressing Run). If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
+    "CodeVision understands a small part of C: int, float and char variables, one- and two-dimensional arrays, text stored in char arrays, if / else, for and while loops, functions, printf and puts for output, scanf for input (type the values into the Input field under the editor before pressing Run), and rand and srand for random numbers. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
 }
 
 export type TranslationKey = keyof typeof en
@@ -435,10 +438,10 @@ const uz: Record<TranslationKey, string> = {
   'unsupported.placeholder': "printf o'rinbosari {placeholder} hali qo'llab-quvvatlanmaydi. Faqat %d, %f, %c va %s ishlaydi.",
   'unsupported.array3d': "Ikkitadan ortiq o'lchovli massivlar hali qo'llab-quvvatlanmaydi.",
   'unsupported.string': 'Matnli satrlarni faqat printf, puts ichida yoki char massivini yaratishda ishlatish mumkin, masalan char name[] = "hi";',
-  'unsupported.include': "Faqat #include <stdio.h> qo'llab-quvvatlanadi. Boshqa kutubxonalar hali mavjud emas.",
+  'unsupported.include': "Faqat #include <stdio.h> va #include <stdlib.h> qo'llab-quvvatlanadi. Boshqa kutubxonalar hali mavjud emas.",
   'unsupported.directive': "#define kabi preprotsessor direktivalari hali qo'llab-quvvatlanmaydi.",
   'unsupported.escape': `{escape} maxsus belgisi hali qo'llab-quvvatlanmaydi. Faqat \\n, \\\\, \\" va \\' ishlaydi, hamda '\\0' kabi bitta belgida \\0.`,
-  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud kutubxona funksiyalari — printf, puts va scanf.",
+  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud kutubxona funksiyalari — printf, puts, scanf, rand va srand.",
   'unsupported.recursion':
     "{name} hali bajarilayotgan paytda yana chaqirilmoqda (rekursiya). Rekursiya hali qo'llab-quvvatlanmaydi. Uning o'rniga sikldan foydalaning.",
 
@@ -570,6 +573,9 @@ const uz: Record<TranslationKey, string> = {
   'explain.declareGridEmpty':
     "{rows} ta qator va {cols} ta ustunli {type} turidagi {name} ikki o'lchovli massivini e'lon qilamiz. Elementlarning hali qiymati yo'q (0 deb ko'rsatiladi).",
   'explain.readCell': "{target} ni o'qiymiz (qiymati {value}).",
+  'explain.rand': "rand() navbatdagi tasodifiy sonni beradi: {value} (har doim 0 dan 32767 gacha).",
+  'explain.srand':
+    "Tasodifiy sonlarning boshlang'ich qiymati (seed) {value} qilib o'rnatiladi. Bir xil seed har doim bir xil rand() sonlarini beradi, shuning uchun bu dastur har safar ishga tushirilganda bir xil qiymatlarni oladi.",
   'explain.assign': '{target} ga qiymat beramiz: {value}.',
   'explain.increase': '{target} ni 1 ga oshiramiz. Endi {target} = {result}.',
   'explain.decrease': '{target} ni 1 ga kamaytiramiz. Endi {target} = {result}.',
@@ -692,7 +698,7 @@ const uz: Record<TranslationKey, string> = {
   'learn.p2':
     "Joriy qadamda o'zgargan o'zgaruvchilar ko'k chiziq bilan belgilanadi. Dastur massiv bo'ylab yurganda, massiv ko'rinishi ishlatilayotgan elementni belgilaydi, sikl kuzatuvchisi esa takrorlanishlarni sanaydi. printf bilan chiqarilgan hamma narsa konsolda paydo bo'ladi. O'z sur'atingizda yurish uchun Keyingi va Oldingi tugmalaridan, avtomatik qadamlash uchun esa Avto ijrodan foydalaning.",
   'learn.p3':
-    "CodeVision C tilining kichik bir qismini tushunadi: int, float va char o'zgaruvchilar, bir va ikki o'lchovli massivlar, char massivlaridagi matn, if / else, for va while sikllari, funksiyalar, chiqarish uchun printf va puts, kiritish uchun scanf (qiymatlarni Ishga tushirishdan oldin muharrir ostidagi Kiritish maydoniga yozing). Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
+    "CodeVision C tilining kichik bir qismini tushunadi: int, float va char o'zgaruvchilar, bir va ikki o'lchovli massivlar, char massivlaridagi matn, if / else, for va while sikllari, funksiyalar, chiqarish uchun printf va puts, kiritish uchun scanf (qiymatlarni Ishga tushirishdan oldin muharrir ostidagi Kiritish maydoniga yozing), tasodifiy sonlar uchun rand va srand. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
 }
 
 const ru: Record<TranslationKey, string> = {
@@ -782,10 +788,10 @@ const ru: Record<TranslationKey, string> = {
   'unsupported.placeholder': 'Шаблон printf {placeholder} пока не поддерживается. Работают только %d, %f, %c и %s.',
   'unsupported.array3d': 'Массивы с более чем двумя измерениями пока не поддерживаются.',
   'unsupported.string': 'Текстовые строки можно использовать только в printf, в puts или при создании массива char, например char name[] = "hi";',
-  'unsupported.include': 'Поддерживается только #include <stdio.h>. Другие библиотеки пока недоступны.',
+  'unsupported.include': 'Поддерживаются только #include <stdio.h> и #include <stdlib.h>. Другие библиотеки пока недоступны.',
   'unsupported.directive': 'Директивы препроцессора вроде #define пока не поддерживаются.',
   'unsupported.escape': `Escape-последовательность {escape} пока не поддерживается. Работают только \\n, \\\\, \\" и \\', а также \\0 в одиночном символе вроде '\\0'.`,
-  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступны только printf, puts и scanf.',
+  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступны только printf, puts, scanf, rand и srand.',
   'unsupported.recursion':
     '{name} вызывается снова, пока ещё выполняется (рекурсия). Рекурсия пока не поддерживается. Используйте цикл.',
 
@@ -917,6 +923,9 @@ const ru: Record<TranslationKey, string> = {
   'explain.declareGridEmpty':
     'Объявляем двумерный массив {name} типа {type}: строк — {rows}, столбцов — {cols}. Значений пока нет (показаны как 0).',
   'explain.readCell': 'Читаем {target} (значение {value}).',
+  'explain.rand': 'rand() выдаёт следующее случайное число: {value} (всегда от 0 до 32767).',
+  'explain.srand':
+    'Задаём начальное значение (seed) случайных чисел: {value}. Одно и то же seed всегда даёт одни и те же числа rand(), поэтому при каждом запуске эта программа получает одинаковые значения.',
   'explain.assign': 'Присваиваем {target} значение {value}.',
   'explain.increase': 'Увеличиваем {target} на 1. Теперь {target} = {result}.',
   'explain.decrease': 'Уменьшаем {target} на 1. Теперь {target} = {result}.',
@@ -1038,7 +1047,7 @@ const ru: Record<TranslationKey, string> = {
   'learn.p2':
     'Переменные, изменившиеся на текущем шаге, обведены синим. Когда программа проходит по массиву, вид массива отмечает используемый элемент, а счётчик цикла считает итерации. Всё, что выведено через printf, появляется в консоли. Переходите по шагам кнопками «Далее» и «Назад» в своём темпе или включите «Автошаг».',
   'learn.p3':
-    'CodeVision понимает небольшую часть языка C: переменные int, float и char, одномерные и двумерные массивы, текст в массивах char, if / else, циклы for и while, функции, printf и puts для вывода и scanf для ввода (значения введите в поле «Ввод» под редактором до нажатия «Запустить»). Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
+    'CodeVision понимает небольшую часть языка C: переменные int, float и char, одномерные и двумерные массивы, текст в массивах char, if / else, циклы for и while, функции, printf и puts для вывода, scanf для ввода (значения введите в поле «Ввод» под редактором до нажатия «Запустить»), rand и srand для случайных чисел. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
 }
 
 export const translations: Record<Locale, Record<TranslationKey, string>> = { en, uz, ru }

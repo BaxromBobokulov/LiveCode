@@ -21,6 +21,10 @@ export type StepFact =
   | { kind: 'declareGrid'; name: string; type: string; rows: number; cols: number; values: string[][] | null }
   /** A 2D array cell read while working out this line, e.g. target "grid[1][2]". */
   | { kind: 'readCell'; target: string; value: string }
+  /** A rand() call worked out while running this line, and the number it gave. */
+  | { kind: 'rand'; value: string }
+  /** srand(seed) started a new sequence of random numbers. */
+  | { kind: 'srand'; seed: Shown }
   | { kind: 'assign'; target: string; value: Shown }
   | { kind: 'update'; target: string; op: '++' | '--'; result: string }
   | { kind: 'expr'; value: Shown }
@@ -128,6 +132,12 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'readCell':
       return [{ key: 'explain.readCell', values: { target: fact.target, value: fact.value } }]
+
+    case 'rand':
+      return [{ key: 'explain.rand', values: { value: fact.value } }]
+
+    case 'srand':
+      return [{ key: 'explain.srand', values: { value: showValue(fact.seed) } }]
 
     // Writes to a 2D cell use this too: the target names the exact cell, e.g. "Set grid[0][0] to grid[i][j] + 1: 4 + 1 = 5."
     case 'assign':

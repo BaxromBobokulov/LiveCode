@@ -1,9 +1,9 @@
 import { useTranslation } from '../../i18n/useTranslation'
 
-/** Shows each "printf", "puts" and "scanf" in a paragraph in the code font. */
+/** Shows each "printf", "puts", "scanf", "rand" and "srand" in a paragraph in the code font. */
 function withCode(text: string) {
   // Splitting on a capture group keeps the matched names at the odd indexes.
-  return text.split(/\b(printf|puts|scanf)\b/).map((part, index) =>
+  return text.split(/\b(printf|puts|scanf|rand|srand)\b/).map((part, index) =>
     index % 2 === 0 ? (
       part
     ) : (

@@ -50,6 +50,21 @@ const completions: Completion[] = [
     // The cursor lands after the &, where the variable to fill goes.
     apply: snippet('scanf("%d", &${});'),
   },
+  {
+    label: 'rand',
+    type: 'function',
+    detail: 'rand — a random whole number from 0 to 32767 (needs <stdlib.h>)',
+    info: 'rand() % 10  // 0 to 9',
+    apply: 'rand()',
+  },
+  {
+    label: 'srand',
+    type: 'function',
+    detail: 'srand — choose the seed: the same seed gives the same rand() numbers',
+    info: 'srand(seed);',
+    // The cursor lands inside the parentheses, where the seed goes.
+    apply: snippet('srand(${});'),
+  },
 ]
 
 // Strings and comments are plain text to the program, so typing in them shouldn't pop up code suggestions.
