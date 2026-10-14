@@ -254,8 +254,8 @@ describe('runUserCode', () => {
     expect(checks[1].array?.values).toEqual([8, 8, 15])
   })
 
-  it('reports a pointer as not supported, with its line', () => {
-    const result = runUserCode(lines('int main() {', '    int x = 1;', '    int *p = &x;', '    return 0;', '}'))
+  it('reports a pointer feature outside the subset as not supported, with its line', () => {
+    const result = runUserCode(lines('int main() {', '    int x = 1;', '    int **p;', '    return 0;', '}'))
 
     expect('error' in result).toBe(true)
     if (!('error' in result)) return
@@ -614,6 +614,61 @@ describe('runUserCode', () => {
     expect(steps[steps.indexOf(breakSteps[0]) + 1]).toMatchObject({ line: 2, loop: { line: 2, iteration: 2 } })
   })
 
+  it('runs comma-separated parts in a for header, merged into the loop check', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    int arr[5] = {1, 2, 3, 4, 5};',
+        '    int n = 5;',
+        '    for (int i = 0, j = n - 1; i < j; i++, j--) {',
+        '        int t = arr[i];',
+        '        arr[i] = arr[j];',
+        '        arr[j] = t;',
+        '    }',
+        '    printf("%d %d %d %d %d", arr[0], arr[1], arr[2], arr[3], arr[4]);',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(steps.at(-1)?.output).toBe('5 4 3 2 1')
+    const checks = steps.filter((s) => s.line === 4)
+    expect(checks.map(english)).toEqual([
+      'Start the loop: create i and set it to 0 and create j and set it to 4. Check i < j: 0 < 4 is true, so run the loop body.',
+      'Increase i to 1 and decrease j to 3. Check i < j: 1 < 3 is true, so run the loop body again.',
+      'Increase i to 2 and decrease j to 2. Check i < j: 2 < 2 is false, so the loop ends.',
+    ])
+    // Both variables are marked as changed on the same step.
+    expect(checks[1].changed).toEqual(['i', 'j'])
+    expect(checks[1].variables.filter((v) => v.name === 'i' || v.name === 'j').map((v) => v.value)).toEqual(['1', '3'])
+    expect(checks.map((s) => s.loop?.total ?? null)).toEqual([2, 2, null])
+
+    // Assignments in the init, and three parts in the update, run left to right.
+    const three = stepsOf(
+      lines(
+        'int main() {',
+        '    int i, j, k = 0;',
+        '    for (i = 0, j = 10; i < 2; i++, j -= 2, k += j) {',
+        '        printf("%d %d %d|", i, j, k);',
+        '    }',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(three.at(-1)?.output).toBe('0 10 0|1 8 8|')
+    expect(english(three.filter((s) => s.line === 3)[1])).toBe(
+      'Increase i to 1, set j to 8 and set k to 8. Check i < 2: 1 < 2 is true, so run the loop body again.',
+    )
+  })
+
+  it('keeps the comma operator unsupported outside a for header', () => {
+    const result = runUserCode(lines('int main() {', '    int i = 0, j = 0;', '    i++, j++;', '    return 0;', '}'))
+    expect(result).toMatchObject({ error: { line: 3, text: { key: 'unsupported.comma' } } })
+    const inBody = runUserCode(
+      lines('int main() {', '    for (int i = 0; i < 2; i++) {', '        i++, i++;', '    }', '    return 0;', '}'),
+    )
+    expect(inBody).toMatchObject({ error: { line: 3, text: { key: 'unsupported.comma' } } })
+  })
+
   it('reports break or continue outside a loop as a code error', () => {
     for (const keyword of ['break', 'continue']) {
       const result = runUserCode(lines('int main() {', '    int x = 1;', `    ${keyword};`, '    return 0;', '}'))
@@ -623,5 +678,107 @@ describe('runUserCode', () => {
     // A function called from a loop is still outside it, as in real C.
     const result = runUserCode(lines('void f() {', '    break;', '}', 'int main() {', '    while (1) f();', '    return 0;', '}'))
     expect(result).toMatchObject({ error: { line: 2, text: { key: 'codeError.outsideLoop' } } })
+  })
+
+  describe('pointers', () => {
+    it('points at a variable and changes it through the pointer', () => {
+      const steps = stepsOf(
+        lines(
+          'int main() {',
+          '    int x = 5;',
+          '    int *p = &x;',
+          '    int y = *p;',
+          '    *p = 10;',
+          '    int z = 2;',
+          '    p = &z;',
+          '    (*p)++;',
+          '    return 0;',
+          '}',
+        ),
+      )
+
+      // Fake addresses: 0x100 for the first variable, then 4 higher each.
+      expect(steps[0].variables).toEqual([{ name: 'x', value: '5', address: '0x100' }])
+      expect(steps[1].variables[1]).toEqual({ name: 'p', value: '0x100', address: '0x104', isPointer: true, pointsTo: '0x100' })
+      expect(english(steps[1])).toBe("Create pointer p and point it at x: it holds x's address, 0x100.")
+      expect(english(steps[2])).toBe('*p follows p to x, which holds 5. Create y and set it to *p (5).')
+      // Writing *p changes x, so x is the variable highlighted.
+      expect(steps[3].changed).toEqual(['x'])
+      expect(steps[3].variables[0]).toMatchObject({ name: 'x', value: '10' })
+      expect(english(steps[3])).toBe('*p is x, the variable p points to, so this line changes x. Set *p to 10.')
+      expect(steps[5].variables[1]).toMatchObject({ name: 'p', value: '0x10c', pointsTo: '0x10c' })
+      expect(english(steps[5])).toBe("p now points to z: it holds z's address, 0x10c.")
+      expect(steps[6]).toMatchObject({ changed: ['z'] })
+      expect(steps[6].variables.find((v) => v.name === 'z')?.value).toBe('3')
+    })
+
+    it('keeps * as multiplication between two values and reads int *p, q as one pointer', () => {
+      const steps = stepsOf(
+        lines('int main() {', '    int x = 3, *p = &x, q = 4;', '    int y = x * *p * q;', '    return 0;', '}'),
+      )
+      expect(steps.at(-2)?.variables.find((v) => v.name === 'y')?.value).toBe('36')
+      expect(steps[2].variables.find((v) => v.name === 'q')).toEqual({ name: 'q', value: '4', address: '0x108' })
+    })
+
+    it('compares pointers with NULL and with each other', () => {
+      const steps = stepsOf(
+        lines(
+          'int main() {',
+          '    int x = 1;',
+          '    int *p = NULL;',
+          '    if (p == NULL) {',
+          '        p = &x;',
+          '    }',
+          '    int *q = p;',
+          '    if (p == q && q != NULL) {',
+          '        printf("same\\n");',
+          '    }',
+          '    return 0;',
+          '}',
+        ),
+      )
+      expect(steps[1].variables[1]).toEqual({ name: 'p', value: 'NULL', address: '0x104', isPointer: true })
+      expect(english(steps[1])).toBe('Create pointer p and set it to NULL: it points to nothing for now.')
+      expect(english(steps[2])).toBe('Check if p == NULL: NULL == NULL is true, so run the if block.')
+      expect(steps.at(-1)?.output).toBe('same\n')
+    })
+
+    it('shows no addresses in programs without pointers', () => {
+      expect(stepsOf(lines('int main() {', '    int x = 1;', '    return 0;', '}'))[0].variables).toEqual([{ name: 'x', value: '1' }])
+    })
+
+    it('reports following a NULL, unset or ended pointer as a code error', () => {
+      const cases: [string[], number, string][] = [
+        [['int main() {', '    int *p = NULL;', '    int y = *p;', '    return 0;', '}'], 3, 'codeError.derefNull'],
+        [['int main() {', '    int *p;', '    *p = 10;', '    return 0;', '}'], 3, 'codeError.derefUninit'],
+        [['int main() {', '    int *p;', '    {', '        int x = 1;', '        p = &x;', '    }', '    *p = 2;', '    return 0;', '}'], 7, 'codeError.derefDangling'],
+        [['int main() {', '    int x = 1;', '    int y = *x;', '    return 0;', '}'], 3, 'codeError.derefNotPointer'],
+        [['int main() {', '    int x = 1;', '    int *p = &x;', '    int y = p + 0 * 1;', '    return 0;', '}'], 4, 'unsupported.pointerArithmetic'],
+        [['int main() {', '    int x = 1;', '    int *p = &x;', '    printf("%d", p);', '    return 0;', '}'], 4, 'codeError.pointerAsNumber'],
+        [['int main() {', '    int *p = 5;', '    return 0;', '}'], 2, 'codeError.notAddress'],
+        [['int main() {', '    float f = 1.0;', '    int *p = &f;', '    return 0;', '}'], 3, 'codeError.pointerTypeMismatch'],
+      ]
+      for (const [code, line, key] of cases) {
+        const result = runUserCode(lines(...code))
+        expect('error' in result && { line: result.error.line, key: result.error.text.key }).toEqual({ line, key })
+      }
+      const error = runUserCode(lines('int main() {', '    int *p = NULL;', '    int y = *p;', '    return 0;', '}'))
+      expect('error' in error && error.error).toBeInstanceOf(CodeError)
+    })
+
+    it('rejects pointer features outside the subset as not supported', () => {
+      const cases: [string[], string][] = [
+        [['int main() {', '    int x = 1;', '    int *p = &x;', '    p++;', '    return 0;', '}'], 'unsupported.pointerArithmetic'],
+        [['int main() {', '    int x = 1;', '    int *p = &x;', '    *p++;', '    return 0;', '}'], 'unsupported.pointerArithmetic'],
+        [['int main() {', '    int a[2];', '    int *p = &a[0];', '    return 0;', '}'], 'unsupported.pointerToArray'],
+        [['void f(int *a) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.pointerParam'],
+        [['int main() {', '    char *s = "hi";', '    return 0;', '}'], 'unsupported.stringPointer'],
+      ]
+      for (const [code, key] of cases) {
+        const result = runUserCode(lines(...code))
+        expect('error' in result && result.error).toBeInstanceOf(UnsupportedConstructError)
+        expect('error' in result && result.error.text.key).toBe(key)
+      }
+    })
   })
 })

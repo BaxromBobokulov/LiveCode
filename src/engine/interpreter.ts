@@ -1,10 +1,11 @@
 import type { TranslationKey } from '../i18n/translations'
 import { CodeError, UnsupportedConstructError, code, scanfReadError, type RunError } from './errors'
-import { explain, type Shown, type StepFact } from './explain'
+import { explain, type PointsTo, type Shown, type StepFact } from './explain'
 import {
   formatNumber,
   needsParens,
   parse,
+  pointerError,
   quoteText,
   toSource,
   type BinaryOp,
@@ -16,13 +17,26 @@ import {
   type Stmt,
   type Target,
 } from './parser'
-import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step } from './types'
+import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step, Variable } from './types'
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
 
 /** The largest number rand() gives, as in most C compilers' <stdlib.h>. */
 export const RAND_MAX = 32767
+
+/**
+ * Variables get made-up, small addresses instead of real memory addresses: the first one declared
+ * is 0x100 and each next one is 4 higher (0x104, 0x108, ...), whatever its type. Addresses are never
+ * reused within a Run, so a variable created again in a later loop iteration or call gets a new one.
+ */
+export const FIRST_ADDRESS = 0x100
+const ADDRESS_STEP = 4
+
+/** An address as the Variables panel and the explanations show it, e.g. "0x104". */
+export function formatAddress(address: number): string {
+  return `0x${address.toString(16)}`
+}
 
 /** Largest array (in total cells, for a 2D array) the array view can reasonably show. */
 const MAX_ARRAY_SIZE = 100
@@ -35,12 +49,17 @@ const libraryFunctions = new Set([
   'sqrt', 'pow', 'fabs', 'floor', 'ceil', 'sin', 'cos', 'tan', 'log', 'exp',
 ])
 
-type Scalar = { kind: 'scalar'; type: NumType; value: number | null }
+/** `ended` is set once the block that declared the variable is over, so a pointer to it can't be followed. */
+type Scalar = { kind: 'scalar'; type: NumType; value: number | null; address: number; ended?: true }
+/** The variable a pointer points to: the slot itself (it may live in another call), plus its name. */
+type PointerTarget = { name: string; slot: Scalar }
+/** `int *p`: points to an int variable (`type` is the pointee's type), or 'NULL', or null before it gets an address. */
+type PointerStore = { kind: 'pointer'; type: NumType; target: PointerTarget | 'NULL' | null; address: number; ended?: true }
 /** Arrays are shared by reference, so a function that receives one changes the caller's array. */
 type ArrayStore = { kind: 'array'; type: NumType; values: number[] }
 /** A 2D array: one inner array per row. Shared by reference, like ArrayStore. */
 type GridStore = { kind: 'grid'; type: NumType; values: number[][] }
-type Slot = Scalar | ArrayStore | GridStore
+type Slot = Scalar | PointerStore | ArrayStore | GridStore
 
 /** One running function call. */
 type Frame = {
@@ -109,7 +128,24 @@ function formatSlot(slot: Slot): string {
       : `[${row.map((v) => formatNumber(v, slot.type)).join(', ')}]`
   if (slot.kind === 'array') return formatRow(slot.values)
   if (slot.kind === 'grid') return `[${slot.values.map(formatRow).join(', ')}]`
+  // A pointer holds the address of the variable it points to.
+  if (slot.kind === 'pointer') return slot.target === null ? '?' : showPointer(slot.target)
   return slot.value === null ? '?' : formatNumber(slot.value, slot.type)
+}
+
+/** A pointer's value as shown: the pointee's address, or NULL. */
+function showPointer(target: PointerTarget | 'NULL'): string {
+  return target === 'NULL' ? 'NULL' : formatAddress(target.slot.address)
+}
+
+/** How an explanation names what a pointer points to. */
+function pointsTo(target: PointerTarget | 'NULL'): PointsTo {
+  return target === 'NULL' ? 'NULL' : { target: target.name, address: formatAddress(target.slot.address) }
+}
+
+/** Marks the variables of a block (or a call) that just ended, so pointers to them can't be followed any more. */
+function endScope(scope: Map<string, Slot>) {
+  for (const slot of scope.values()) if (slot.kind === 'scalar' || slot.kind === 'pointer') slot.ended = true
 }
 
 /** What the array view shows for an array, with `active` as the element or cell in use. */
@@ -171,6 +207,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
    * new one. Without srand() the seed is 1, as in real C, so every Run gives the same numbers.
    */
   let randomState = 1
+  /** The made-up address the next declared variable gets (see FIRST_ADDRESS). */
+  let nextAddress = FIRST_ADDRESS
   /**
    * The array the current statement used, and the element or 2D cell it read or wrote (shown as active
    * in the array view). `active` is null when it used the whole array, e.g. printf("%s", name).
@@ -200,12 +238,12 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const current = frame()
 
     // Inner blocks come last, so a shadowing variable replaces the outer one's value.
-    const variables = new Map<string, string>()
+    const variables = new Map<string, Variable>()
     let firstArray: ArrayView | GridView | null = null
     for (const scope of current.scopes) {
       for (const [name, slot] of scope) {
-        variables.set(name, formatSlot(slot))
-        if (slot.kind !== 'scalar' && !firstArray) firstArray = arrayView(name, slot, null)
+        variables.set(name, showVariable(name, slot))
+        if ((slot.kind === 'array' || slot.kind === 'grid') && !firstArray) firstArray = arrayView(name, slot, null)
       }
     }
 
@@ -219,7 +257,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     steps.push({
       line,
       scope: `${current.fn.name}()`,
-      variables: [...variables].map(([name, value]) => ({ name, value })),
+      variables: [...variables.values()],
       changed,
       array: access ? arrayView(access.name, access.store, access.active) : firstArray,
       loop: loopRun?.infos.at(-1) ?? null,
@@ -228,6 +266,26 @@ export function execute(program: Program, input: string[] = []): Step[] {
     })
     access = null
     cellReads = []
+  }
+
+  /**
+   * One variable for the Variables panel. In a program with pointers, each plain variable and pointer
+   * also shows its address, and a pointer names the address it points to so the panel can draw an arrow.
+   */
+  function showVariable(name: string, slot: Slot): Variable {
+    const variable: Variable = { name, value: formatSlot(slot) }
+    if (!program.usesPointers || (slot.kind !== 'scalar' && slot.kind !== 'pointer')) return variable
+    variable.address = formatAddress(slot.address)
+    if (slot.kind !== 'pointer') return variable
+    variable.isPointer = true
+    if (slot.target !== null && slot.target !== 'NULL') variable.pointsTo = formatAddress(slot.target.slot.address)
+    return variable
+  }
+
+  function newAddress(): number {
+    const address = nextAddress
+    nextAddress += ADDRESS_STEP
+    return address
   }
 
   /** Copies of the arrays visible right now, by name. Inner blocks win, as for variables. */
@@ -260,7 +318,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       emit(fn.endLine, { kind: 'end', name: fn.name, caller })
     }
 
-    frames.pop()
+    frames.pop()?.scopes.forEach(endScope)
     return returned ? returned.value : null
   }
 
@@ -331,7 +389,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       } else {
         const value = evaluate(arg)
         const converted = convert(value.value, param.type)
-        params.set(param.name, { kind: 'scalar', type: param.type, value: converted })
+        params.set(param.name, { kind: 'scalar', type: param.type, value: converted, address: newAddress() })
         args.push(formatNumber(value.value, value.type))
         shownParams.push({ name: param.name, value: formatNumber(converted, param.type), isArray: false })
       }
@@ -388,7 +446,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       throw new CodeError(expr.line, 'codeError.argCount', { name: 'time', expected: 1, given: expr.args.length })
     }
     const arg = expr.args[0]
-    if (arg.kind !== 'var' || arg.name !== 'NULL') {
+    if (arg.kind !== 'null') {
       throw new UnsupportedConstructError(
         expr.line,
         code(`time(${toSource(arg)})`),
@@ -402,12 +460,19 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
   // ----- Variables -----
 
-  function lookup(name: string, line: number): Slot {
+  /** The variable `name` in the running call, innermost block first, or undefined. */
+  function findSlot(name: string): Slot | undefined {
     const { scopes } = frame()
     for (let i = scopes.length - 1; i >= 0; i--) {
       const slot = scopes[i].get(name)
       if (slot) return slot
     }
+    return undefined
+  }
+
+  function lookup(name: string, line: number): Slot {
+    const slot = findSlot(name)
+    if (slot) return slot
     if (program.functions.has(name)) throw new CodeError(line, 'codeError.isFunction', { name })
     throw new CodeError(line, 'codeError.notDeclared', { name })
   }
@@ -416,8 +481,89 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const slot = lookup(name, line)
     if (slot.kind === 'array') throw new CodeError(line, 'codeError.isArray', { name })
     if (slot.kind === 'grid') throw new CodeError(line, 'codeError.isGrid', { name })
+    if (slot.kind === 'pointer') throw new CodeError(line, 'codeError.pointerAsNumber', { name, deref: `*${name}` })
     if (slot.value === null) throw new CodeError(line, 'codeError.noValue', { name })
     return { type: slot.type, value: slot.value, work: formatNumber(slot.value, slot.type) }
+  }
+
+  // ----- Pointers -----
+
+  /**
+   * `*p`: the variable the pointer p points to. Following a NULL pointer, one that was never given an
+   * address, or one whose variable no longer exists is a mistake in the program.
+   */
+  function follow(name: string, line: number): PointerTarget {
+    const slot = lookup(name, line)
+    if (slot.kind !== 'pointer') throw new CodeError(line, 'codeError.derefNotPointer', { name, deref: `*${name}` })
+    if (slot.target === null) throw new CodeError(line, 'codeError.derefUninit', { pointer: name, deref: `*${name}` })
+    if (slot.target === 'NULL') throw new CodeError(line, 'codeError.derefNull', { pointer: name, deref: `*${name}` })
+    if (slot.target.slot.ended) {
+      throw new CodeError(line, 'codeError.derefDangling', { pointer: name, deref: `*${name}`, target: slot.target.name })
+    }
+    return slot.target
+  }
+
+  /**
+   * What a pointer expression points to: `&x`, `NULL`, or another pointer's value (`q`).
+   * Anything else (a number, `x + 1`, ...) is not an address, and `notAddress` says why.
+   */
+  function pointerValue(expr: Expr, notAddress: () => CodeError): PointerTarget | 'NULL' {
+    if (expr.kind === 'null') return 'NULL'
+    if (expr.kind === 'address') {
+      const slot = lookup(expr.name, expr.line)
+      if (slot.kind === 'pointer') throw pointerError(expr.line, 'unsupported.pointerToPointer')
+      if (slot.kind !== 'scalar') throw pointerError(expr.line, 'unsupported.pointerToArray')
+      return { name: expr.name, slot }
+    }
+    if (expr.kind === 'var') {
+      const slot = lookup(expr.name, expr.line)
+      if (slot.kind === 'pointer') {
+        if (slot.target === null) throw new CodeError(expr.line, 'codeError.pointerNoValue', { name: expr.name })
+        return slot.target
+      }
+    }
+    throw notAddress()
+  }
+
+  /** Points the pointer `name` (of type `slot.type`) at `target`, checking the types match: an int * only points to an int. */
+  function setPointer(name: string, slot: PointerStore, target: PointerTarget | 'NULL', line: number) {
+    if (target !== 'NULL' && target.slot.type !== slot.type) {
+      throw new CodeError(line, 'codeError.pointerTypeMismatch', {
+        name,
+        pointerType: slot.type,
+        target: target.name,
+        targetType: target.slot.type,
+      })
+    }
+    slot.target = target
+  }
+
+  /** Whether `expr` is an address rather than a number: `&x`, `NULL`, or a pointer variable. */
+  function isPointerExpr(expr: Expr): boolean {
+    if (expr.kind === 'null' || expr.kind === 'address') return true
+    return expr.kind === 'var' && findSlot(expr.name)?.kind === 'pointer'
+  }
+
+  /** `p == q`, `p != NULL`: two pointers are equal when they point to the same variable (or are both NULL). */
+  function comparePointers(expr: Extract<Expr, { kind: 'binary' }>): Value {
+    const notAddress = () => new CodeError(expr.line, 'codeError.pointerCompare', { source: toSource(expr) })
+    const left = pointerValue(expr.left, notAddress)
+    const right = pointerValue(expr.right, notAddress)
+    const same = left === 'NULL' || right === 'NULL' ? left === right : left.slot === right.slot
+    return {
+      type: 'int',
+      value: (expr.op === '==') === same ? 1 : 0,
+      work: `${showPointer(left)} ${expr.op} ${showPointer(right)}`,
+    }
+  }
+
+  /** `p = &x;`, `p = q;` or `p = NULL;`. Moving a pointer with `p++` or `p += 1` is pointer arithmetic. */
+  function assignPointer(stmt: Extract<Stmt, { kind: 'assign' | 'update' }>, name: string, slot: PointerStore): Effect {
+    if (stmt.kind === 'update' || stmt.op !== '=') throw pointerError(stmt.line, 'unsupported.pointerArithmetic')
+    const value = stmt.value
+    const target = pointerValue(value, () => new CodeError(stmt.line, 'codeError.notAddress', { name, value: toSource(value) }))
+    setPointer(name, slot, target, stmt.line)
+    return { facts: [{ kind: 'pointTo', name, points: pointsTo(target) }], changed: [name] }
   }
 
   /** Finds the array element `arr[i]` refers to, and marks it as this step's active element. */
@@ -473,18 +619,38 @@ export function execute(program: Program, input: string[] = []): Step[] {
     return value.value
   }
 
-  /** Something that can be read and written: a variable or an array element. */
+  /**
+   * Something that can be read and written: a variable, an array element, or the variable a pointer
+   * points to (`*p`). `changed` names the variable that is highlighted when it is written.
+   */
   function resolveTarget(target: Target) {
     if (target.kind === 'var') {
       const slot = lookup(target.name, target.line)
+      if (slot.kind === 'pointer') throw new CodeError(target.line, 'codeError.pointerAsNumber', { name: target.name, deref: `*${target.name}` })
       if (slot.kind !== 'scalar') {
         const example = slot.kind === 'grid' ? `${target.name}[0][0] = 1;` : `${target.name}[0] = 1;`
         throw new CodeError(target.line, 'codeError.assignArray', { name: target.name, example })
       }
       return {
         label: target.name,
+        changed: target.name,
         type: slot.type,
         read: () => readScalar(target.name, target.line),
+        write: (value: number) => (slot.value = convert(value, slot.type)),
+      }
+    }
+    if (target.kind === 'deref') {
+      const pointee = follow(target.name, target.line)
+      const slot = pointee.slot
+      cellReads.push({ kind: 'derefWrite', pointer: target.name, target: pointee.name })
+      return {
+        label: `*${target.name}`,
+        changed: pointee.name,
+        type: slot.type,
+        read: (): Value => {
+          if (slot.value === null) throw new CodeError(target.line, 'codeError.noValue', { name: pointee.name })
+          return { type: slot.type, value: slot.value, work: formatNumber(slot.value, slot.type) }
+        },
         write: (value: number) => (slot.value = convert(value, slot.type)),
       }
     }
@@ -492,6 +658,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       const { store, row, col } = cellOf(target)
       return {
         label: `${target.name}[${row}][${col}]`,
+        changed: target.name,
         type: store.type,
         read: (): Value => ({ type: store.type, value: store.values[row][col], work: formatNumber(store.values[row][col], store.type) }),
         write: (value: number) => (store.values[row][col] = convert(value, store.type)),
@@ -500,6 +667,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const { store, index } = elementOf(target)
     return {
       label: `${target.name}[${index}]`,
+      changed: target.name,
       type: store.type,
       read: (): Value => ({ type: store.type, value: store.values[index], work: formatNumber(store.values[index], store.type) }),
       write: (value: number) => (store.values[index] = convert(value, store.type)),
@@ -509,6 +677,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
   function declare(type: NumType, d: Declarator): Effect {
     const scope = frame().scopes[frame().scopes.length - 1]
     if (scope.has(d.name)) throw new CodeError(d.line, 'codeError.alreadyDeclared', { name: d.name })
+
+    if (d.isPointer) return declarePointer(type, d, scope)
 
     if (d.isArray && d.columns) return declareGrid(type, d, d.columns, scope)
 
@@ -532,12 +702,25 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     const value = d.init ? evaluate(d.init) : null
     const stored = value ? convert(value.value, type) : null
-    scope.set(d.name, { kind: 'scalar', type, value: stored })
+    scope.set(d.name, { kind: 'scalar', type, value: stored, address: newAddress() })
     const shown: Shown | null =
       d.init && value && stored !== null
         ? { source: toSource(d.init), work: value.work, result: formatNumber(stored, type) }
         : null
     return { facts: [{ kind: 'declare', name: d.name, value: shown }], changed: [d.name] }
+  }
+
+  /** `int *p;`, `int *p = &x;` or `int *p = NULL;` */
+  function declarePointer(type: NumType, d: Declarator, scope: Map<string, Slot>): Effect {
+    const slot: PointerStore = { kind: 'pointer', type, target: null, address: newAddress() }
+    const init = d.init
+    if (init) {
+      const target = pointerValue(init, () => new CodeError(d.line, 'codeError.notAddress', { name: d.name, value: toSource(init) }))
+      setPointer(d.name, slot, target, d.line)
+    }
+    scope.set(d.name, slot)
+    const points = slot.target === null ? null : pointsTo(slot.target)
+    return { facts: [{ kind: 'declarePointer', name: d.name, points }], changed: [d.name] }
   }
 
   /**
@@ -627,6 +810,21 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'var':
         return readScalar(expr.name, expr.line)
 
+      case 'deref': {
+        const pointee = follow(expr.name, expr.line)
+        const { value, type } = pointee.slot
+        if (value === null) throw new CodeError(expr.line, 'codeError.noValue', { name: pointee.name })
+        const work = formatNumber(value, type)
+        cellReads.push({ kind: 'derefRead', pointer: expr.name, target: pointee.name, value: work })
+        return { type, value, work }
+      }
+
+      // An address or NULL only makes sense where a pointer is expected, e.g. `p = &x;` or `p == NULL`.
+      case 'address':
+        throw new CodeError(expr.line, 'codeError.addressAsNumber', { expr: toSource(expr) })
+      case 'null':
+        throw new CodeError(expr.line, 'codeError.nullAsNumber')
+
       case 'index': {
         const { store, index } = elementOf(expr)
         return { type: store.type, value: store.values[index], work: formatNumber(store.values[index], store.type) }
@@ -649,6 +847,10 @@ export function execute(program: Program, input: string[] = []): Step[] {
       }
 
       case 'binary': {
+        if (isPointerExpr(expr.left) || isPointerExpr(expr.right)) {
+          if (expr.op === '==' || expr.op === '!=') return comparePointers(expr)
+          if (expr.op === '+' || expr.op === '-') throw pointerError(expr.line, 'unsupported.pointerArithmetic')
+        }
         const left = evaluate(expr.left)
         const leftWork = wrap(left.work, expr.left, expr.op, false)
 
@@ -695,8 +897,13 @@ export function execute(program: Program, input: string[] = []): Step[] {
       }
     }
 
+    if (stmt.target.kind === 'var') {
+      const slot = lookup(stmt.target.name, stmt.target.line)
+      if (slot.kind === 'pointer') return assignPointer(stmt, stmt.target.name, slot)
+    }
+
     const target = resolveTarget(stmt.target)
-    const name = stmt.target.name
+    const name = target.changed
 
     if (stmt.kind === 'update') {
       const current = target.read()
@@ -728,15 +935,20 @@ export function execute(program: Program, input: string[] = []): Step[] {
     return { facts: [{ kind: 'assign', target: target.label, value: shown }], changed: [name] }
   }
 
-  /** Runs a for loop's init or update part. Its step is merged into the loop check. */
-  function runLoopPart(stmt: Stmt | null): Effect {
-    if (!stmt) return { facts: [], changed: [] }
-    if (stmt.kind === 'declare') {
-      const effects = stmt.declarators.map((d) => declare(stmt.type, d))
-      return { facts: effects.flatMap((e) => e.facts), changed: effects.flatMap((e) => e.changed) }
-    }
-    if (stmt.kind === 'assign' || stmt.kind === 'update' || stmt.kind === 'expr') return runSimple(stmt)
-    throw new CodeError(stmt.line, 'codeError.forHeader')
+  /**
+   * Runs a for loop's init or update part, each comma-separated piece in turn, left to right.
+   * There is no step of its own: everything it did is merged into the loop check's step.
+   */
+  function runLoopPart(parts: Stmt[]): Effect {
+    const effects = parts.map((stmt): Effect => {
+      if (stmt.kind === 'declare') {
+        const declared = stmt.declarators.map((d) => declare(stmt.type, d))
+        return { facts: declared.flatMap((e) => e.facts), changed: declared.flatMap((e) => e.changed) }
+      }
+      if (stmt.kind === 'assign' || stmt.kind === 'update' || stmt.kind === 'expr') return runSimple(stmt)
+      throw new CodeError(stmt.line, 'codeError.forHeader')
+    })
+    return { facts: effects.flatMap((e) => e.facts), changed: effects.flatMap((e) => e.changed) }
   }
 
   function runStatements(body: Stmt[]): Jump | null {
@@ -832,7 +1044,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
             throw fail(specifier === 'd' ? 'codeError.scanfNotInt' : 'codeError.scanfNotNumber', { value: text })
           }
           const stored = target.write(Number(text))
-          emit(stmt.line, { kind: 'scan', target: target.label, value: formatNumber(stored, target.type) }, [targetExpr.name])
+          emit(stmt.line, { kind: 'scan', target: target.label, value: formatNumber(stored, target.type) }, [target.changed])
         })
         return null
       }
@@ -840,7 +1052,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'block': {
         frame().scopes.push(new Map())
         const jump = runStatements(stmt.body)
-        frame().scopes.pop()
+        endScope(frame().scopes.pop()!)
         return jump
       }
 
@@ -917,10 +1129,10 @@ export function execute(program: Program, input: string[] = []): Step[] {
   function runLoop(stmt: Extract<Stmt, { kind: 'while' | 'for' }>): Jump | null {
     const current = frame()
     current.scopes.push(new Map()) // holds `i` from `for (int i = 0; ...)`
-    const loop: LoopRun = { iteration: 0, infos: [], hasUpdate: stmt.kind === 'for' && stmt.update !== null }
+    const loop: LoopRun = { iteration: 0, infos: [], hasUpdate: stmt.kind === 'for' && stmt.update.length > 0 }
     current.loops.push(loop)
 
-    let setup = stmt.kind === 'for' ? runLoopPart(stmt.init) : runLoopPart(null)
+    let setup = runLoopPart(stmt.kind === 'for' ? stmt.init : [])
     let isFirst = true
     let returned: Jump | null = null
 
@@ -954,11 +1166,11 @@ export function execute(program: Program, input: string[] = []): Step[] {
         if (jump.kind === 'return') returned = jump
         break
       }
-      setup = stmt.kind === 'for' ? runLoopPart(stmt.update) : runLoopPart(null)
+      setup = runLoopPart(stmt.kind === 'for' ? stmt.update : [])
     }
 
     for (const info of loop.infos) info.total = loop.iteration
-    current.scopes.pop()
+    endScope(current.scopes.pop()!)
     return returned
   }
 }

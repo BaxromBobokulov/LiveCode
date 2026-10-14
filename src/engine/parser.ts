@@ -1,5 +1,6 @@
 import { CodeError, UnsupportedConstructError, code, scanfReadError } from './errors'
 import { tokenize, type Token } from './lexer'
+import type { TranslationKey } from '../i18n/translations'
 import { charText, type Phrase } from './types'
 
 // ---------------------------------------------------------------------------
@@ -22,14 +23,22 @@ export type Expr =
   | { kind: 'call'; line: number; name: string; args: Expr[] }
   /** A "text" literal. Only allowed where text is expected, e.g. as a printf or puts argument. */
   | { kind: 'string'; line: number; value: string }
+  /** `*p`: the variable the pointer `name` points to. Only a pointer's name can follow the `*`. */
+  | { kind: 'deref'; line: number; name: string }
+  /** `&x`: the address of the variable `name`. */
+  | { kind: 'address'; line: number; name: string }
+  /** `NULL`: the empty pointer, which points to nothing. */
+  | { kind: 'null'; line: number }
 
-/** Something that can be assigned to: `x`, `arr[i]` or `grid[i][j]`. */
-export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' }>
+/** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]` or `*p`. */
+export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' }>
 
 export type Declarator = {
   line: number
   name: string
   isArray: boolean
+  /** `int *p`: a pointer to the declaration's type. */
+  isPointer: boolean
   /** Array size from `arr[size]` (the row count for `grid[rows][cols]`), or null for `arr[]` / plain variables. */
   size: Expr | null
   /** Column count from `grid[rows][cols]`. Only set for a 2D array. */
@@ -58,7 +67,11 @@ export type Stmt =
   | { kind: 'scanf'; line: number; reads: { specifier: 'd' | 'f' | 's'; target: Target }[] }
   | { kind: 'if'; line: number; cond: Expr; then: Stmt; otherwise: Stmt | null }
   | { kind: 'while'; line: number; cond: Expr; body: Stmt }
-  | { kind: 'for'; line: number; init: Stmt | null; cond: Expr | null; update: Stmt | null; body: Stmt }
+  /**
+   * `init` and `update` can each hold several comma-separated parts, run left to right:
+   * `for (i = 0, j = n - 1; i < j; i++, j--)`. Empty when that part is left out.
+   */
+  | { kind: 'for'; line: number; init: Stmt[]; cond: Expr | null; update: Stmt[]; body: Stmt }
   | { kind: 'return'; line: number; value: Expr | null }
   /** `break;` leaves the innermost loop; `continue;` jumps to its next check. */
   | { kind: 'break' | 'continue'; line: number }
@@ -83,7 +96,11 @@ export type FunctionDecl = {
   endLine: number
 }
 
-export type Program = { functions: Map<string, FunctionDecl> }
+export type Program = {
+  functions: Map<string, FunctionDecl>
+  /** Whether the program declares a pointer, so the Variables panel shows each variable's address. */
+  usesPointers: boolean
+}
 
 // ---------------------------------------------------------------------------
 // Printing expressions back as source text (used by the explanations)
@@ -127,6 +144,12 @@ export function toSource(expr: Expr): string {
       return `${expr.name}(${expr.args.map(toSource).join(', ')})`
     case 'string':
       return quoteText(expr.value)
+    case 'deref':
+      return `*${expr.name}`
+    case 'address':
+      return `&${expr.name}`
+    case 'null':
+      return 'NULL'
   }
 }
 
@@ -224,8 +247,9 @@ function rejectUnsupportedOperator(token: Token) {
   }
 }
 
-function pointerError(line: number): UnsupportedConstructError {
-  return new UnsupportedConstructError(line, { key: 'construct.pointer' }, { key: 'unsupported.pointer' })
+/** A pointer feature outside the supported subset, e.g. `int **p` or `p + 1`. */
+export function pointerError(line: number, key: TranslationKey): UnsupportedConstructError {
+  return new UnsupportedConstructError(line, { key: 'construct.pointer' }, { key })
 }
 
 function describe(token: Token): Phrase {
@@ -273,7 +297,7 @@ export function parse(source: string): Program {
   function expectIdentifier(): Token {
     const token = peek()
     if (token.kind === 'identifier') return advance()
-    if (token.text === '*') throw pointerError(token.line)
+    if (token.text === '*') throw pointerError(token.line, 'unsupported.pointerToPointer')
     rejectUnsupportedKeyword(token)
     throw new CodeError(token.line, 'codeError.expectedName', { found: describe(token) })
   }
@@ -283,6 +307,7 @@ export function parse(source: string): Program {
   const functions = new Map<string, FunctionDecl>()
   /** How many loops the statement being parsed is inside, so a `break` outside any loop is caught. */
   let loopDepth = 0
+  let usesPointers = false
 
   while (peek().kind !== 'eof') {
     const token = peek()
@@ -291,7 +316,7 @@ export function parse(source: string): Program {
       throw new CodeError(token.line, 'codeError.expectedFunction', { found: describe(token) })
     }
     const returnType = advance().text as NumType | 'void'
-    if (is('*')) throw pointerError(peek().line)
+    if (is('*')) throw pointerError(peek().line, 'unsupported.pointerReturn')
     const nameToken = expectIdentifier()
 
     if (!is('(')) {
@@ -322,7 +347,7 @@ export function parse(source: string): Program {
     throw new CodeError(tokens[pos].line, 'codeError.noMain')
   }
 
-  return { functions }
+  return { functions, usesPointers }
 
   function parseParams(): Param[] {
     expect('(')
@@ -334,7 +359,7 @@ export function parse(source: string): Program {
       rejectUnsupportedKeyword(typeToken)
       if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
       const type = advance().text as NumType
-      if (is('*')) throw pointerError(peek().line)
+      if (is('*')) throw pointerError(peek().line, 'unsupported.pointerParam')
       // Names are optional in prototypes: "int add(int, int);"
       const name = peek().kind === 'identifier' ? advance().text : ''
       let isArray = false
@@ -413,16 +438,16 @@ export function parse(source: string): Program {
 
     if (accept('for')) {
       expect('(')
-      let init: Stmt | null = null
+      let init: Stmt[] = []
       if (isType()) {
-        init = parseDeclaration() // consumes the ";"
+        init = [parseDeclaration()] // `int i = 0, j = n - 1;` — consumes the ";"
       } else {
-        if (!is(';')) init = parseSimpleStatement()
+        if (!is(';')) init = parseLoopParts()
         expect(';')
       }
       const cond = is(';') ? null : parseExpression()
       expect(';')
-      const update = is(')') ? null : parseSimpleStatement()
+      const update = is(')') ? [] : parseLoopParts()
       expect(')')
       return { kind: 'for', line, init, cond, update, body: parseLoopBody() }
     }
@@ -444,6 +469,16 @@ export function parse(source: string): Program {
     return statement
   }
 
+  /**
+   * A for header's init or update part: `i++` or `i++, j--`. The comma operator is only
+   * allowed here; anywhere else a comma between statements is still an error.
+   */
+  function parseLoopParts(): Stmt[] {
+    const parts = [parseSimpleStatement()]
+    while (accept(',')) parts.push(parseSimpleStatement())
+    return parts
+  }
+
   /** A loop's body, where `break` and `continue` are allowed. */
   function parseLoopBody(): Stmt {
     loopDepth++
@@ -459,7 +494,9 @@ export function parse(source: string): Program {
     const declarators: Declarator[] = []
 
     do {
-      if (is('*')) throw pointerError(peek().line)
+      // The * belongs to each name on its own: in `int *p, q;` only p is a pointer.
+      const isPointer = accept('*')
+      if (isPointer) usesPointers = true
       const nameToken = expectIdentifier()
       if (is('(')) {
         throw new CodeError(nameToken.line, 'codeError.nestedFunction', { name: nameToken.text })
@@ -469,6 +506,7 @@ export function parse(source: string): Program {
         line: nameToken.line,
         name: nameToken.text,
         isArray: false,
+        isPointer,
         size: null,
         columns: null,
         init: null,
@@ -477,6 +515,7 @@ export function parse(source: string): Program {
         stringInit: null,
       }
       if (accept('[')) {
+        if (isPointer) throw pointerError(nameToken.line, 'unsupported.pointerArray')
         declarator.isArray = true
         if (!is(']')) declarator.size = parseExpression()
         expect(']')
@@ -493,6 +532,7 @@ export function parse(source: string): Program {
       if (accept('=')) {
         const name = nameToken.text
         if (peek().kind === 'string') {
+          if (isPointer) throw pointerError(peek().line, 'unsupported.stringPointer')
           // Text goes into a 1D char array: char name[] = "hello";
           if (type !== 'char') throw new CodeError(peek().line, 'codeError.stringIntoNonChar', { name, type })
           if (!declarator.isArray) throw new CodeError(peek().line, 'codeError.stringIntoChar', { name })
@@ -556,7 +596,10 @@ export function parse(source: string): Program {
       return { kind: 'update', line, target: parseTarget(), op }
     }
 
-    if (peek().kind === 'identifier' && !is('(', 1)) {
+    // `*p = 1` and `(*p)++` start with a pointer's target too.
+    const startsTarget =
+      (peek().kind === 'identifier' && !is('(', 1)) || is('*') || (is('(') && is('*', 1) && is(')', 3))
+    if (startsTarget) {
       const start = pos
       const target = parseTarget()
       if (is('++') || is('--')) return { kind: 'update', line, target, op: advance().text as '++' | '--' }
@@ -572,11 +615,33 @@ export function parse(source: string): Program {
     return { kind: 'expr', line, expr: parseExpression() }
   }
 
-  /** `x`, `arr[i]` or `grid[i][j]` on the left of an assignment. */
+  /** `x`, `arr[i]`, `grid[i][j]`, `*p` or `(*p)` on the left of an assignment. */
   function parseTarget(): Target {
+    if (is('(') && is('*', 1)) {
+      advance()
+      const target = parseDeref()
+      expect(')')
+      return target
+    }
+    if (is('*')) {
+      const target = parseDeref()
+      // `*p++` moves p itself (pointer arithmetic), not the value it points to.
+      if (is('++') || is('--')) throw pointerError(peek().line, 'unsupported.pointerArithmetic')
+      return target
+    }
     const nameToken = expectIdentifier()
     if (!is('[')) return { kind: 'var', line: nameToken.line, name: nameToken.text }
     return parseIndexed(nameToken)
+  }
+
+  /** `*p`, where p is a pointer's name. Anything else after the `*`, like `*(p + 1)`, is pointer arithmetic. */
+  function parseDeref(): Extract<Expr, { kind: 'deref' }> {
+    const star = advance() // *
+    if (is('*')) throw pointerError(peek().line, 'unsupported.pointerToPointer')
+    if (peek().kind !== 'identifier' || is('(', 1)) throw pointerError(star.line, 'unsupported.pointerArithmetic')
+    const nameToken = advance()
+    if (is('[')) throw pointerError(star.line, 'unsupported.pointerToArray')
+    return { kind: 'deref', line: star.line, name: nameToken.text }
   }
 
   /** The `[i]` or `[i][j]` after an array's name. */
@@ -714,11 +779,27 @@ export function parse(source: string): Program {
         advance()
         return parseUnary()
       }
-      if (token.text === '*' || token.text === '&') throw pointerError(token.line)
+      // At the start of an operand, `*` follows a pointer and `&` takes an address. Between two
+      // operands they mean multiplication and bitwise AND instead, which parseBinary handles.
+      if (token.text === '*') {
+        const deref = parseDeref()
+        if (is('++') || is('--')) throw pointerError(peek().line, 'unsupported.pointerArithmetic')
+        return deref
+      }
+      if (token.text === '&') return parseAddress()
       if (token.text === '~') throw new UnsupportedConstructError(token.line, ...bitwise('~'))
       if (token.text === '++' || token.text === '--') rejectUnsupportedOperator(token)
     }
     return parsePrimary()
+  }
+
+  /** `&x`: the address of a plain variable. `&arr[i]` would be a pointer into an array. */
+  function parseAddress(): Expr {
+    const amp = advance() // &
+    if (peek().kind !== 'identifier' || is('(', 1)) throw new CodeError(amp.line, 'codeError.addressOfValue')
+    const nameToken = advance()
+    if (is('[')) throw pointerError(amp.line, 'unsupported.pointerToArray')
+    return { kind: 'address', line: amp.line, name: nameToken.text }
   }
 
   function parsePrimary(): Expr {
@@ -750,6 +831,7 @@ export function parse(source: string): Program {
         return { kind: 'call', line: token.line, name: token.text, args }
       }
       if (is('[')) return parseIndexed(token)
+      if (token.text === 'NULL') return { kind: 'null', line: token.line }
       return { kind: 'var', line: token.line, name: token.text }
     }
 

@@ -13,6 +13,9 @@ import type { Phrase } from './types'
 /** A value as it appears in an explanation. */
 export type Shown = { source: string; work: string; result: string }
 
+/** What a pointer points to: a variable and its (made-up) address, or NULL. */
+export type PointsTo = { target: string; address: string } | 'NULL'
+
 export type StepFact =
   | { kind: 'declare'; name: string; value: Shown | null }
   | { kind: 'declareArray'; name: string; type: string; size: number; values: string[] | null }
@@ -27,6 +30,14 @@ export type StepFact =
   | { kind: 'time'; value: string }
   /** srand(seed) started a new sequence of random numbers. `fromTime` marks srand(time(NULL)). */
   | { kind: 'srand'; seed: Shown; fromTime: boolean }
+  /** `int *p;` (`points` is null), `int *p = &x;` or `int *p = NULL;` */
+  | { kind: 'declarePointer'; name: string; points: PointsTo | null }
+  /** `p = &x;`, `p = q;` or `p = NULL;` */
+  | { kind: 'pointTo'; name: string; points: PointsTo }
+  /** `*p` read while working out this line: it follows p to `target`, which holds `value`. */
+  | { kind: 'derefRead'; pointer: string; target: string; value: string }
+  /** `*p = ...` on this line changes `target`, the variable p points to. */
+  | { kind: 'derefWrite'; pointer: string; target: string }
   | { kind: 'assign'; target: string; value: Shown }
   | { kind: 'update'; target: string; op: '++' | '--'; result: string }
   | { kind: 'expr'; value: Shown }
@@ -74,6 +85,11 @@ function showCondition({ source, work }: Shown, result: boolean): Phrase {
     : { key: 'explain.conditionWork', values: { source, work, result: truth } }
 }
 
+/** A pointer's new value as written in the code: "&x" or "NULL". */
+function pointerSource(points: PointsTo): string {
+  return points === 'NULL' ? 'NULL' : `&${points.target}`
+}
+
 /** "an int", "a float" or "a char" */
 function typeName(type: string): Phrase {
   return { key: type === 'int' ? 'explain.type.int' : type === 'char' ? 'explain.type.char' : 'explain.type.float' }
@@ -91,6 +107,13 @@ function shortPhrase(fact: StepFact, capital: boolean): Phrase {
         : { key: capital ? 'explain.shortCap.create' : 'explain.short.create', values: { name: fact.name } }
     case 'assign':
       return { key: capital ? 'explain.shortCap.set' : 'explain.short.set', values: { target: fact.target, value: fact.value.result } }
+    // In a for (...) header a pointer reads like any other variable: "set p to &x".
+    case 'declarePointer':
+      return fact.points
+        ? { key: capital ? 'explain.shortCap.createValue' : 'explain.short.createValue', values: { name: fact.name, value: pointerSource(fact.points) } }
+        : { key: capital ? 'explain.shortCap.create' : 'explain.short.create', values: { name: fact.name } }
+    case 'pointTo':
+      return { key: capital ? 'explain.shortCap.set' : 'explain.short.set', values: { target: fact.name, value: pointerSource(fact.points) } }
     case 'update': {
       const values = { target: fact.target, value: fact.result }
       if (fact.op === '++') return { key: capital ? 'explain.shortCap.increase' : 'explain.short.increase', values }
@@ -137,6 +160,21 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'readCell':
       return [{ key: 'explain.readCell', values: { target: fact.target, value: fact.value } }]
+
+    case 'declarePointer':
+      if (fact.points === null) return [{ key: 'explain.declarePointer', values: { name: fact.name } }]
+      if (fact.points === 'NULL') return [{ key: 'explain.declarePointerNull', values: { name: fact.name } }]
+      return [{ key: 'explain.declarePointerTo', values: { name: fact.name, ...fact.points } }]
+
+    case 'pointTo':
+      if (fact.points === 'NULL') return [{ key: 'explain.pointNull', values: { name: fact.name } }]
+      return [{ key: 'explain.pointTo', values: { name: fact.name, ...fact.points } }]
+
+    case 'derefRead':
+      return [{ key: 'explain.derefRead', values: { pointer: fact.pointer, deref: `*${fact.pointer}`, target: fact.target, value: fact.value } }]
+
+    case 'derefWrite':
+      return [{ key: 'explain.derefWrite', values: { pointer: fact.pointer, deref: `*${fact.pointer}`, target: fact.target } }]
 
     case 'rand':
       return [{ key: 'explain.rand', values: { value: fact.value } }]

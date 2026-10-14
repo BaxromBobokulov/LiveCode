@@ -13,8 +13,14 @@ export type PhraseValue = string | number | Phrase | Phrase[]
 /** One variable as the Variables panel shows it. */
 export type Variable = {
   name: string
-  /** Display-ready value, e.g. "15", "[4, 8, 15]" or "?" when not yet assigned. */
+  /** Display-ready value, e.g. "15", "[4, 8, 15]" or "?" when not yet assigned. A pointer's value is an address ("0x104") or "NULL". */
   value: string
+  /** Made-up address of the variable, e.g. "0x104". Only set in programs that use pointers. */
+  address?: string
+  /** Marks a pointer, e.g. `int *p`. Its value is the address it holds, "NULL", or "?" before it gets one. */
+  isPointer?: true
+  /** For a pointer: the address of the variable it points to, so the panel can draw an arrow to that box. */
+  pointsTo?: string
 }
 
 /** The array drawn in the array visualization. */

@@ -29,6 +29,9 @@
   --color-text: #15181d;
   --color-textMuted: #667085;
   --color-textFaint: #9aa1ac;
+  /* textMuted is 4.41:1 on accentTint; this is the same grey, darkened to 4.61:1. Used for the
+     captions (name, address) of a highlighted variable box. */
+  --color-textMutedOnTint: #636d82;
 
   /* Semantic — errorTint mixes ~8.5% error into white, the same ratio as accentTint */
   --color-error: #ef4444;
@@ -67,6 +70,7 @@
   --color-text: #e7e9ec;
   --color-textMuted: #a3abb8;
   --color-textFaint: #6f7783;
+  --color-textMutedOnTint: #a3abb8; /* textMuted already passes on the dark tint (6.83:1) */
 
   --color-error: #f87171;
   --color-errorTint: #2c1719;
