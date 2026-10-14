@@ -81,6 +81,8 @@ export type Param = {
   name: string
   type: NumType
   isArray: boolean
+  /** `int *a`: the call passes an address (`f(&x)`), so the function can change the caller's variable through `*a`. */
+  isPointer: boolean
   /** Column count of a 2D array parameter, e.g. 3 in `int grid[][3]`; null otherwise. */
   columns: number | null
 }
@@ -359,11 +361,14 @@ export function parse(source: string): Program {
       rejectUnsupportedKeyword(typeToken)
       if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
       const type = advance().text as NumType
-      if (is('*')) throw pointerError(peek().line, 'unsupported.pointerParam')
+      const isPointer = accept('*')
+      if (isPointer) usesPointers = true
+      if (is('*')) throw pointerError(peek().line, 'unsupported.pointerToPointer')
       // Names are optional in prototypes: "int add(int, int);"
       const name = peek().kind === 'identifier' ? advance().text : ''
       let isArray = false
       let columns: number | null = null
+      if (isPointer && is('[')) throw pointerError(peek().line, 'unsupported.pointerArray')
       if (accept('[')) {
         if (peek().kind === 'number') advance()
         expect(']')
@@ -380,7 +385,7 @@ export function parse(source: string): Program {
           if (is('[')) throw tooManyDimensionsError(peek().line)
         }
       }
-      params.push({ name, type, isArray, columns })
+      params.push({ name, type, isArray, isPointer, columns })
     }
     expect(')')
     return params

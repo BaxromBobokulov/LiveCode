@@ -19,8 +19,22 @@ export type Variable = {
   address?: string
   /** Marks a pointer, e.g. `int *p`. Its value is the address it holds, "NULL", or "?" before it gets one. */
   isPointer?: true
+  /**
+   * Set on the box of another function's variable, e.g. "main()": while a function runs, a variable of
+   * its caller that one of its pointers points to is shown too (as "x · main()"), so the arrow has a box
+   * to point at. Such boxes are only in the steps of that call.
+   */
+  scope?: string
   /** For a pointer: the address of the variable it points to, so the panel can draw an arrow to that box. */
   pointsTo?: string
+}
+
+/**
+ * How a variable is told apart in `Step.changed` and in the Variables panel: its name, or "x@main()"
+ * for another function's variable (see Variable.scope), which may have the same name as one here.
+ */
+export function variableKey(variable: Pick<Variable, 'name' | 'scope'>): string {
+  return variable.scope ? `${variable.name}@${variable.scope}` : variable.name
 }
 
 /** The array drawn in the array visualization. */
@@ -83,7 +97,7 @@ export type Step = {
   /** Function currently executing, e.g. "main()". */
   scope: string
   variables: Variable[]
-  /** Names of the variables that changed on this step. */
+  /** Names of the variables that changed on this step (see variableKey for another function's variable). */
   changed: string[]
   array: ArrayView | GridView | null
   loop: LoopInfo | null

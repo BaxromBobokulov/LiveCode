@@ -781,6 +781,80 @@ describe('runUserCode', () => {
       expect('error' in result && result.error.text.key).toBe('unsupported.placeholder')
     })
 
+    it('swaps two variables of main() through pointer parameters', () => {
+      const steps = stepsOf(
+        lines(
+          'void swap(int *a, int *b) {',
+          '    int t = *a;',
+          '    *a = *b;',
+          '    *b = t;',
+          '}',
+          'int main() {',
+          '    int x = 1;',
+          '    int y = 2;',
+          '    swap(&x, &y);',
+          '    printf("%d %d\\n", x, y);',
+          '    return 0;',
+          '}',
+        ),
+      )
+      const call = steps[2]
+      expect(call).toMatchObject({ line: 1, scope: 'swap()', changed: ['a', 'b'] })
+      expect(english(call)).toBe(
+        "Call swap(&x, &y). Inside swap, a points to x (it holds its address, 0x100) and b points to y (it holds its address, 0x104).",
+      )
+      // While swap() runs, main()'s x and y are shown too, so a's and b's arrows have boxes to point at.
+      expect(call.variables).toEqual([
+        { name: 'a', value: '0x100', address: '0x108', isPointer: true, pointsTo: '0x100' },
+        { name: 'b', value: '0x104', address: '0x10c', isPointer: true, pointsTo: '0x104' },
+        { name: 'x', value: '1', address: '0x100', scope: 'main()' },
+        { name: 'y', value: '2', address: '0x104', scope: 'main()' },
+      ])
+      // *a = *b changes main()'s x, live, while swap() is still running.
+      const write = steps.find((s) => s.line === 3)!
+      expect(write.changed).toEqual(['x@main()'])
+      expect(write.variables.find((v) => v.name === 'x')).toMatchObject({ value: '2', scope: 'main()' })
+      // Back in main(), the extra boxes are gone and main()'s own x and y hold the swapped values.
+      const back = steps.find((s) => s.line === 10)!
+      expect(back.scope).toBe('main()')
+      expect(back.variables).toEqual([
+        { name: 'x', value: '2', address: '0x100' },
+        { name: 'y', value: '1', address: '0x104' },
+      ])
+      expect(back.output).toBe('2 1\n')
+    })
+
+    it('reads through a pointer parameter, and passes it on to another function', () => {
+      const steps = stepsOf(
+        lines(
+          'int twice(int *n) {',
+          '    return *n * 2;',
+          '}',
+          'int show(int *p) {',
+          '    return twice(p) + 1;',
+          '}',
+          'int main() {',
+          '    int x = 4;',
+          '    int r = show(&x);',
+          '    printf("%d %d\\n", x, r);',
+          '    return 0;',
+          '}',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('4 9\n')
+      // Two calls deep, n still points to main()'s x.
+      const inner = steps.find((s) => s.scope === 'twice()' && s.line === 2)!
+      expect(english(inner)).toBe('*n follows n to x, which holds 4. Leave twice and go back to show, returning *n * 2: 4 * 2 = 8.')
+      expect(inner.variables).toContainEqual({ name: 'x', value: '4', address: '0x100', scope: 'main()' })
+    })
+
+    it('reports a pointer parameter given something that is not an address', () => {
+      const code = ['void f(int *a) {', '}', 'int main() {', '    int x = 1;', '    f(x);', '    return 0;', '}']
+      const result = runUserCode(lines(...code))
+      expect('error' in result && result.error).toBeInstanceOf(CodeError)
+      expect('error' in result && { line: result.error.line, key: result.error.text.key }).toEqual({ line: 5, key: 'codeError.expectsPointer' })
+    })
+
     it('shows no addresses in programs without pointers', () => {
       expect(stepsOf(lines('int main() {', '    int x = 1;', '    return 0;', '}'))[0].variables).toEqual([{ name: 'x', value: '1' }])
     })
@@ -809,7 +883,7 @@ describe('runUserCode', () => {
         [['int main() {', '    int x = 1;', '    int *p = &x;', '    p++;', '    return 0;', '}'], 'unsupported.pointerArithmetic'],
         [['int main() {', '    int x = 1;', '    int *p = &x;', '    *p++;', '    return 0;', '}'], 'unsupported.pointerArithmetic'],
         [['int main() {', '    int a[2];', '    int *p = &a[0];', '    return 0;', '}'], 'unsupported.pointerToArray'],
-        [['void f(int *a) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.pointerParam'],
+        [['void f(int **a) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.pointerToPointer'],
         [['int main() {', '    char *s = "hi";', '    return 0;', '}'], 'unsupported.stringPointer'],
       ]
       for (const [code, key] of cases) {

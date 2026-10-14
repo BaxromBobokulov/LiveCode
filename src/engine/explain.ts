@@ -58,7 +58,8 @@ export type StepFact =
       /** What comes after this branch when the condition is false. */
       next: 'else if' | 'else' | 'nothing'
     }
-  | { kind: 'call'; name: string; args: string[]; params: { name: string; value: string; isArray: boolean }[] }
+  /** `points` is set for a pointer parameter: the variable it now points to, or NULL. */
+  | { kind: 'call'; name: string; args: string[]; params: { name: string; value: string; isArray: boolean; points?: PointsTo }[] }
   | { kind: 'return'; name: string; value: Shown | null; caller: string | null }
   | { kind: 'end'; name: string; caller: string | null }
   | { kind: 'print'; text: string }
@@ -237,10 +238,11 @@ export function explain(fact: StepFact): Phrase[] {
     case 'call': {
       const call = `${fact.name}(${fact.args.join(', ')})`
       if (fact.params.length === 0) return [{ key: 'explain.callNoArgs', values: { call } }]
-      const params: Phrase[] = fact.params.map((p) => ({
-        key: p.isArray ? 'explain.paramArray' : 'explain.param',
-        values: { name: p.name, value: p.value },
-      }))
+      const params: Phrase[] = fact.params.map((p): Phrase => {
+        if (p.points === 'NULL') return { key: 'explain.paramPointerNull', values: { name: p.name } }
+        if (p.points) return { key: 'explain.paramPointer', values: { name: p.name, ...p.points } }
+        return { key: p.isArray ? 'explain.paramArray' : 'explain.param', values: { name: p.name, value: p.value } }
+      })
       return [{ key: 'explain.call', values: { call, name: fact.name, params } }]
     }
 

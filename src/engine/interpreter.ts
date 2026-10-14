@@ -17,7 +17,7 @@ import {
   type Stmt,
   type Target,
 } from './parser'
-import type { ArrayView, GridCell, GridView, LoopInfo, Phrase, Step, Variable } from './types'
+import { variableKey, type ArrayView, type GridCell, type GridView, type LoopInfo, type Phrase, type Step, type Variable } from './types'
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
@@ -239,12 +239,26 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     // Inner blocks come last, so a shadowing variable replaces the outer one's value.
     const variables = new Map<string, Variable>()
+    const shownSlots = new Map<string, Slot>()
     let firstArray: ArrayView | GridView | null = null
     for (const scope of current.scopes) {
       for (const [name, slot] of scope) {
         variables.set(name, showVariable(name, slot))
+        shownSlots.set(name, slot)
         if ((slot.kind === 'array' || slot.kind === 'grid') && !firstArray) firstArray = arrayView(name, slot, null)
       }
+    }
+    // A pointer here may point to a variable of a caller, e.g. swap(&x, &y): show that variable too,
+    // as "x · main()", so the arrow has a box to point at. It goes away when this call returns.
+    const visible = new Set(shownSlots.values())
+    for (const slot of shownSlots.values()) {
+      if (slot.kind !== 'pointer' || slot.target === null || slot.target === 'NULL') continue
+      const { name, slot: target } = slot.target
+      const owner = target.ended || visible.has(target) ? undefined : ownerOf(target)
+      if (!owner) continue
+      visible.add(target)
+      const variable = { ...showVariable(name, target), scope: `${owner.fn.name}()` }
+      variables.set(variableKey(variable), variable)
     }
 
     if (pendingCheck) {
@@ -280,6 +294,21 @@ export function execute(program: Program, input: string[] = []): Step[] {
     variable.isPointer = true
     if (slot.target !== null && slot.target !== 'NULL') variable.pointsTo = formatAddress(slot.target.slot.address)
     return variable
+  }
+
+  /** The running call that holds `slot`, if any. */
+  function ownerOf(slot: Slot): Frame | undefined {
+    return frames.find((f) => f.scopes.some((scope) => [...scope.values()].includes(slot)))
+  }
+
+  /**
+   * How `changed` names the variable a pointer points to: its name when it belongs to the running
+   * call, or "x@main()" for a caller's variable (shown as "x · main()", see emit).
+   */
+  function pointeeKey(target: PointerTarget): string {
+    if (findSlot(target.name) === target.slot) return target.name
+    const owner = ownerOf(target.slot)
+    return owner && owner !== frame() ? variableKey({ name: target.name, scope: `${owner.fn.name}()` }) : target.name
   }
 
   function newAddress(): number {
@@ -354,11 +383,19 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     const params = new Map<string, Slot>()
     const args: string[] = []
-    const shownParams: { name: string; value: string; isArray: boolean }[] = []
+    const shownParams: Extract<StepFact, { kind: 'call' }>['params'] = []
 
     fn.params.forEach((param, i) => {
       const arg = expr.args[i]
-      if (param.isArray) {
+      if (param.isPointer) {
+        // The address is passed, not a copy: *a inside the function is the caller's variable.
+        const target = pointerValue(arg, () => new CodeError(expr.line, 'codeError.expectsPointer', { fn: fn.name, param: param.name }))
+        const slot: PointerStore = { kind: 'pointer', type: param.type, target: null, address: newAddress() }
+        setPointer(param.name, slot, target, expr.line)
+        params.set(param.name, slot)
+        args.push(toSource(arg))
+        shownParams.push({ name: param.name, value: showPointer(target), isArray: false, points: pointsTo(target) })
+      } else if (param.isArray) {
         const slot = arg.kind === 'var' ? lookup(arg.name, arg.line) : null
         const isGridParam = param.columns !== null
         if (!slot || slot.kind !== (isGridParam ? 'grid' : 'array') || arg.kind !== 'var') {
@@ -645,7 +682,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       cellReads.push({ kind: 'derefWrite', pointer: target.name, target: pointee.name })
       return {
         label: `*${target.name}`,
-        changed: pointee.name,
+        changed: pointeeKey(pointee),
         type: slot.type,
         read: (): Value => {
           if (slot.value === null) throw new CodeError(target.line, 'codeError.noValue', { name: pointee.name })

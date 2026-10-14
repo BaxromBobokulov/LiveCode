@@ -19,7 +19,8 @@ import {
 // The code surface is the one dark panel in the app (AGENTS.md § Code editor panel).
 // These colors only exist here, so they live here rather than in src/theme/colors.css.
 // The accent bar still comes from the shared Tailwind token through its CSS variable.
-const dark = {
+// Exported for exportCodeImage.ts, which draws the code in the same colors.
+export const dark = {
   background: '#1E1E1E',
   text: '#D4D4D4',
   lineNumber: '#858585',
@@ -101,7 +102,8 @@ const editorChrome = EditorView.theme(
 )
 
 // Operators and punctuation are left unmapped so they keep the default text color.
-const syntaxColors = HighlightStyle.define([
+// Exported for exportCodeImage.ts, which colors the downloaded image with the same rules.
+export const syntaxRules = [
   { tag: [tags.controlKeyword, tags.keyword, tags.modifier, tags.definitionKeyword], color: dark.keyword },
   { tag: [tags.special(tags.controlKeyword), tags.processingInstruction], color: dark.flowKeyword },
   { tag: [tags.typeName, tags.standard(tags.typeName)], color: dark.type },
@@ -114,7 +116,8 @@ const syntaxColors = HighlightStyle.define([
   { tag: tags.escape, color: dark.escape },
   { tag: tags.number, color: dark.number },
   { tag: [tags.lineComment, tags.blockComment], color: dark.comment, fontStyle: 'italic' },
-])
+]
+const syntaxColors = HighlightStyle.define(syntaxRules)
 
 export const codeMirrorTheme: Extension = [editorChrome, syntaxHighlighting(syntaxColors)]
 
