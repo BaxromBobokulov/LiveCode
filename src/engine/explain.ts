@@ -55,6 +55,9 @@ export type StepFact =
   | { kind: 'scan'; target: string; value: string }
   /** scanf("%s") stored the next input word in the char array `name`. */
   | { kind: 'scanText'; name: string; text: string; count: number }
+  | { kind: 'break' }
+  /** `toUpdate` marks a for loop with an update part (`i++`), which runs before the next check. */
+  | { kind: 'continue'; toUpdate: boolean }
 
 /** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. Only code and numbers, so no translation. */
 function showValue({ source, work, result }: Shown): string {
@@ -231,6 +234,12 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'scanText':
       return [{ key: 'explain.scanText', values: { name: fact.name, text: fact.text, count: fact.count } }]
+
+    case 'break':
+      return [{ key: 'explain.break' }]
+
+    case 'continue':
+      return [{ key: fact.toUpdate ? 'explain.continueFor' : 'explain.continueWhile' }]
 
     case 'print': {
       if (fact.text === '') return [{ key: 'explain.printEmpty' }]

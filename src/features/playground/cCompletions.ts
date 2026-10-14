@@ -18,6 +18,8 @@ const completions: Completion[] = [
   { label: 'else', type: 'keyword', detail: 'else — run code when the if condition is false', info: 'else { ... }' },
   { label: 'for', type: 'keyword', detail: 'for — loop a fixed number of times', info: 'for (start; condition; step) { ... }' },
   { label: 'while', type: 'keyword', detail: 'while — loop as long as a condition is true', info: 'while (condition) { ... }' },
+  { label: 'break', type: 'keyword', detail: 'break — leave the innermost loop right away', info: 'break;' },
+  { label: 'continue', type: 'keyword', detail: 'continue — skip to the next iteration of the innermost loop', info: 'continue;' },
   { label: 'return', type: 'keyword', detail: 'return — send a value back from a function', info: 'return value;' },
   { label: 'int', type: 'type', detail: 'int — a whole number, like 5 or -2', info: 'int name = 5;' },
   { label: 'float', type: 'type', detail: 'float — a number with a decimal point, like 3.5', info: 'float name = 3.5;' },

@@ -60,6 +60,8 @@ export type Stmt =
   | { kind: 'while'; line: number; cond: Expr; body: Stmt }
   | { kind: 'for'; line: number; init: Stmt | null; cond: Expr | null; update: Stmt | null; body: Stmt }
   | { kind: 'return'; line: number; value: Expr | null }
+  /** `break;` leaves the innermost loop; `continue;` jumps to its next check. */
+  | { kind: 'break' | 'continue'; line: number }
   | { kind: 'block'; line: number; body: Stmt[] }
 
 export type Param = {
@@ -169,8 +171,6 @@ const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> 
   switch: switchStatement,
   case: switchStatement,
   default: switchStatement,
-  break: [code('break'), { key: 'unsupported.break' }],
-  continue: notYet('continue'),
   goto: [code('goto'), { key: 'unsupported.goto' }],
   sizeof: notYet('sizeof'),
   const: qualifier('const'),
@@ -281,6 +281,8 @@ export function parse(source: string): Program {
   // ----- Top level: function definitions only -----
 
   const functions = new Map<string, FunctionDecl>()
+  /** How many loops the statement being parsed is inside, so a `break` outside any loop is caught. */
+  let loopDepth = 0
 
   while (peek().kind !== 'eof') {
     const token = peek()
@@ -373,6 +375,14 @@ export function parse(source: string): Program {
   function parseStatement(): Stmt {
     const token = peek()
     const line = token.line
+
+    if (is('break') || is('continue')) {
+      const keyword = advance().text as 'break' | 'continue'
+      if (loopDepth === 0) throw new CodeError(line, 'codeError.outsideLoop', { keyword })
+      expect(';')
+      return { kind: keyword, line }
+    }
+
     rejectUnsupportedKeyword(token)
 
     if (accept('{')) {
@@ -398,7 +408,7 @@ export function parse(source: string): Program {
       expect('(')
       const cond = parseExpression()
       expect(')')
-      return { kind: 'while', line, cond, body: parseStatement() }
+      return { kind: 'while', line, cond, body: parseLoopBody() }
     }
 
     if (accept('for')) {
@@ -414,7 +424,7 @@ export function parse(source: string): Program {
       expect(';')
       const update = is(')') ? null : parseSimpleStatement()
       expect(')')
-      return { kind: 'for', line, init, cond, update, body: parseStatement() }
+      return { kind: 'for', line, init, cond, update, body: parseLoopBody() }
     }
 
     if (accept('return')) {
@@ -432,6 +442,14 @@ export function parse(source: string): Program {
     const statement = parseSimpleStatement()
     expect(';')
     return statement
+  }
+
+  /** A loop's body, where `break` and `continue` are allowed. */
+  function parseLoopBody(): Stmt {
+    loopDepth++
+    const body = parseStatement()
+    loopDepth--
+    return body
   }
 
   /** `int x = 1, arr[3] = {1, 2, 3}, grid[2][2] = {{1, 2}, {3, 4}};` — including the final ";". */

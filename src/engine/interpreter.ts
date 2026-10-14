@@ -51,14 +51,21 @@ type Frame = {
   loops: LoopRun[]
 }
 
-/** One run of a loop. Each iteration gets a LoopInfo; `total` is filled in once the loop ends. */
-type LoopRun = { iteration: number; infos: LoopInfo[] }
+/**
+ * One run of a loop. Each iteration gets a LoopInfo; `total` is filled in once the loop ends, so after
+ * a `break` it counts the iterations that actually ran (the one that broke out included).
+ * `hasUpdate` marks a for loop with an update part (`i++`), which a `continue` runs before the next check.
+ */
+type LoopRun = { iteration: number; infos: LoopInfo[]; hasUpdate: boolean }
 
 /** A computed value, plus the expression with each value filled in ("4 + 8") for the explanation. */
 type Value = { type: NumType; value: number; work: string }
 
-/** What a `return` hands back up through the blocks and loops around it. null means `void`. */
-type Returned = { value: number | null }
+/**
+ * How a statement can cut the rest of its block short, passed up through the blocks around it:
+ * a `return` (its value, null for `void`) up to the function, a `break` or `continue` up to the innermost loop.
+ */
+type Jump = { kind: 'return'; value: number | null } | { kind: 'break' } | { kind: 'continue' }
 
 /** The result of running a statement whose step is described as part of something else (a loop header). */
 type Effect = { facts: StepFact[]; changed: string[] }
@@ -242,7 +249,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
     frames.push({ fn, scopes: [params], loops: [] })
     if (callFact) emit(fn.line, callFact, fn.params.map((p) => p.name))
 
-    const returned = runStatements(fn.body)
+    // The parser only allows break and continue inside a loop, so only a return gets this far.
+    const jump = runStatements(fn.body)
+    const returned = jump?.kind === 'return' ? jump : null
     if (!returned) {
       const caller = callerName()
       if (fn.returnType !== 'void' && caller !== null) {
@@ -730,15 +739,15 @@ export function execute(program: Program, input: string[] = []): Step[] {
     throw new CodeError(stmt.line, 'codeError.forHeader')
   }
 
-  function runStatements(body: Stmt[]): Returned | null {
+  function runStatements(body: Stmt[]): Jump | null {
     for (const stmt of body) {
-      const returned = run(stmt)
-      if (returned) return returned
+      const jump = run(stmt)
+      if (jump) return jump
     }
     return null
   }
 
-  function run(stmt: Stmt): Returned | null {
+  function run(stmt: Stmt): Jump | null {
     switch (stmt.kind) {
       case 'declare':
         for (const d of stmt.declarators) {
@@ -830,9 +839,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'block': {
         frame().scopes.push(new Map())
-        const returned = runStatements(stmt.body)
+        const jump = runStatements(stmt.body)
         frame().scopes.pop()
-        return returned
+        return jump
       }
 
       case 'if': {
@@ -857,6 +866,16 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'for':
         return runLoop(stmt)
 
+      case 'break':
+        emit(stmt.line, { kind: 'break' })
+        return { kind: 'break' }
+
+      case 'continue': {
+        const loop = frame().loops[frame().loops.length - 1]
+        emit(stmt.line, { kind: 'continue', toUpdate: loop.hasUpdate })
+        return { kind: 'continue' }
+      }
+
       case 'return': {
         const fn = frame().fn
         if (stmt.value && fn.returnType === 'void') throw new CodeError(stmt.line, 'codeError.voidReturn', { name: fn.name })
@@ -866,13 +885,13 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
         if (!stmt.value || fn.returnType === 'void') {
           emit(stmt.line, { kind: 'return', name: fn.name, value: null, caller: callerName() })
-          return { value: null }
+          return { kind: 'return', value: null }
         }
         const value = evaluate(stmt.value)
         const result = convert(value.value, fn.returnType)
         const shown = { source: toSource(stmt.value), work: value.work, result: formatNumber(result, fn.returnType) }
         emit(stmt.line, { kind: 'return', name: fn.name, value: shown, caller: callerName() })
-        return { value: result }
+        return { kind: 'return', value: result }
       }
     }
   }
@@ -895,15 +914,15 @@ export function execute(program: Program, input: string[] = []): Step[] {
     access = { name, store: slot, active: null }
   }
 
-  function runLoop(stmt: Extract<Stmt, { kind: 'while' | 'for' }>): Returned | null {
+  function runLoop(stmt: Extract<Stmt, { kind: 'while' | 'for' }>): Jump | null {
     const current = frame()
     current.scopes.push(new Map()) // holds `i` from `for (int i = 0; ...)`
-    const loop: LoopRun = { iteration: 0, infos: [] }
+    const loop: LoopRun = { iteration: 0, infos: [], hasUpdate: stmt.kind === 'for' && stmt.update !== null }
     current.loops.push(loop)
 
     let setup = stmt.kind === 'for' ? runLoopPart(stmt.init) : runLoopPart(null)
     let isFirst = true
-    let returned: Returned | null = null
+    let returned: Jump | null = null
 
     for (;;) {
       let condition: Shown | null = null
@@ -928,9 +947,11 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       if (!checkUsesArray) pendingCheck = { step: steps[steps.length - 1], frame: current, arrays: arraysInScope() }
 
-      returned = run(stmt.body)
-      if (returned) {
+      // `continue` just goes on to the update and the next check, like reaching the end of the body.
+      const jump = run(stmt.body)
+      if (jump?.kind === 'return' || jump?.kind === 'break') {
         current.loops.pop()
+        if (jump.kind === 'return') returned = jump
         break
       }
       setup = stmt.kind === 'for' ? runLoopPart(stmt.update) : runLoopPart(null)

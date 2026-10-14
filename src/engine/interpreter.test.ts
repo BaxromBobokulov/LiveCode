@@ -513,4 +513,115 @@ describe('runUserCode', () => {
       error: { text: { key: 'unsupported.include' } },
     })
   })
+
+  it('leaves a loop early with break', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    for (int i = 0; i < 10; i++) {',
+        '        if (i == 3) {',
+        '            break;',
+        '        }',
+        '        printf("%d ", i);',
+        '    }',
+        '    printf("done");',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    expect(steps.at(-1)?.output).toBe('0 1 2 done')
+    const breakStep = steps.find((s) => s.line === 4)!
+    expect(english(breakStep)).toBe(
+      'break: leave the loop right away. The rest of the loop is skipped and the program goes on after it.',
+    )
+    // No final loop check after break: the next step is the line after the loop.
+    expect(steps[steps.indexOf(breakStep) + 1].line).toBe(8)
+    // The loop total counts the iterations that actually ran, not the 10 its condition allows.
+    expect(breakStep.loop).toEqual({ line: 2, iteration: 4, total: 4 })
+    expect(steps.filter((s) => s.loop).every((s) => s.loop!.total === 4)).toBe(true)
+    expect(steps[steps.indexOf(breakStep) + 1].loop).toBeNull()
+  })
+
+  it('skips the rest of an iteration with continue', () => {
+    const forSteps = stepsOf(
+      lines(
+        'int main() {',
+        '    for (int i = 0; i < 5; i++) {',
+        '        if (i % 2 == 1) continue;',
+        '        printf("%d ", i);',
+        '    }',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(forSteps.at(-1)?.output).toBe('0 2 4 ')
+    const continueStep = forSteps.find((s) => s.line === 3 && s.explanation[0].key === 'explain.continueFor')!
+    // continue in a for loop: the update (i++) runs next, as part of the loop check.
+    const next = forSteps[forSteps.indexOf(continueStep) + 1]
+    expect(next.line).toBe(2)
+    expect(english(next)).toBe('Increase i to 2. Check i < 5: 2 < 5 is true, so run the loop body again.')
+    expect(forSteps.filter((s) => s.loop).every((s) => s.loop!.total === 5)).toBe(true)
+
+    // continue in a while loop goes straight back to the condition.
+    const whileSteps = stepsOf(
+      lines(
+        'int main() {',
+        '    int i = 0;',
+        '    while (i < 4) {',
+        '        i++;',
+        '        if (i == 2) continue;',
+        '        printf("%d ", i);',
+        '    }',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(whileSteps.at(-1)?.output).toBe('1 3 4 ')
+    const whileContinue = whileSteps.find((s) => s.explanation[0]?.key === 'explain.continueWhile')!
+    expect(english(whileContinue)).toBe(
+      'continue: skip the rest of this iteration and go back to check the loop condition again.',
+    )
+    expect(whileSteps[whileSteps.indexOf(whileContinue) + 1].line).toBe(3)
+  })
+
+  it('makes break and continue affect only the innermost loop', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    for (int i = 0; i < 3; i++) {',
+        '        for (int j = 0; j < 3; j++) {',
+        '            if (j == 1) continue;',
+        '            if (j > i) break;',
+        '            printf("%d%d ", i, j);',
+        '        }',
+        '    }',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    expect(steps.at(-1)?.output).toBe('00 10 20 22 ')
+    // The outer loop still runs all 3 times.
+    expect(steps.filter((s) => s.loop?.line === 2).every((s) => s.loop!.total === 3)).toBe(true)
+    // Each inner run counts its own iterations: i = 0 and i = 1 break at j = 2, i = 2 runs j = 0..2 to the end.
+    const breakSteps = steps.filter((s) => s.line === 5 && s.explanation[0].key === 'explain.break')
+    expect(breakSteps.map((s) => s.loop)).toEqual([
+      { line: 3, iteration: 3, total: 3 },
+      { line: 3, iteration: 3, total: 3 },
+    ])
+    // After an inner break, the next step is the outer loop's update and check.
+    expect(steps[steps.indexOf(breakSteps[0]) + 1]).toMatchObject({ line: 2, loop: { line: 2, iteration: 2 } })
+  })
+
+  it('reports break or continue outside a loop as a code error', () => {
+    for (const keyword of ['break', 'continue']) {
+      const result = runUserCode(lines('int main() {', '    int x = 1;', `    ${keyword};`, '    return 0;', '}'))
+      expect('error' in result && result.error).toBeInstanceOf(CodeError)
+      expect('error' in result && result.error).toMatchObject({ line: 3, text: { key: 'codeError.outsideLoop', values: { keyword } } })
+    }
+    // A function called from a loop is still outside it, as in real C.
+    const result = runUserCode(lines('void f() {', '    break;', '}', 'int main() {', '    while (1) f();', '    return 0;', '}'))
+    expect(result).toMatchObject({ error: { line: 2, text: { key: 'codeError.outsideLoop' } } })
+  })
 })
