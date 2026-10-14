@@ -743,6 +743,44 @@ describe('runUserCode', () => {
       expect(steps.at(-1)?.output).toBe('same\n')
     })
 
+    it('prints with %p the same made-up address the Variables panel shows', () => {
+      const steps = stepsOf(
+        lines(
+          'int main() {',
+          '    int son = 1;',
+          '    int salom = 5;',
+          '    int *ptr = &salom;',
+          '    printf("%p\\n", ptr);',
+          '    printf("%p %p\\n", &son, NULL);',
+          '    ptr = NULL;',
+          '    printf("%p\\n", ptr);',
+          '    return 0;',
+          '}',
+        ),
+      )
+      const ptr = steps[2].variables.find((v) => v.name === 'ptr')
+      expect(ptr?.value).toBe('0x104')
+      expect(steps[3].output).toBe('0x104\n')
+      expect(steps.at(-1)?.output).toBe('0x104\n0x100 NULL\nNULL\n')
+    })
+
+    it('reports %p on something that is not a pointer as a code error', () => {
+      const cases: [string, string][] = [
+        ['    printf("%p", x);', 'codeError.printfPointer'],
+        ['    printf("%p", 5);', 'codeError.printfPointer'],
+        ['    printf("%p", "hi");', 'codeError.printfPointer'],
+        ['    printf("%p", p);', 'codeError.pointerNoValue'],
+      ]
+      for (const [line, key] of cases) {
+        const result = runUserCode(lines('int main() {', '    int x = 1;', '    int *p;', line, '    return 0;', '}'))
+        expect('error' in result && result.error).toBeInstanceOf(CodeError)
+        expect('error' in result && { line: result.error.line, key: result.error.text.key }).toEqual({ line: 4, key })
+      }
+      // Other placeholders are still not supported.
+      const result = runUserCode(lines('int main() {', '    printf("%x", 1);', '    return 0;', '}'))
+      expect('error' in result && result.error.text.key).toBe('unsupported.placeholder')
+    })
+
     it('shows no addresses in programs without pointers', () => {
       expect(stepsOf(lines('int main() {', '    int x = 1;', '    return 0;', '}'))[0].variables).toEqual([{ name: 'x', value: '1' }])
     })

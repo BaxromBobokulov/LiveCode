@@ -987,7 +987,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'printf': {
         let argIndex = 0
-        const text = stmt.format.replace(/%[dfcs%]/g, (placeholder) => {
+        const text = stmt.format.replace(/%[dfcsp%]/g, (placeholder) => {
           if (placeholder === '%%') return '%'
           const arg = stmt.args[argIndex++]
           if (arg.kind === 'string') return arg.value
@@ -997,6 +997,11 @@ export function execute(program: Program, input: string[] = []): Step[] {
                 ? new CodeError(stmt.line, 'codeError.putsText')
                 : new CodeError(stmt.line, 'codeError.printfSNotText', { arg: arg.name }),
             )
+          }
+          // %p prints the same made-up address the Variables panel shows (e.g. 0x104), or NULL.
+          if (placeholder === '%p') {
+            const target = pointerValue(arg, () => new CodeError(stmt.line, 'codeError.printfPointer', { arg: toSource(arg) }))
+            return showPointer(target)
           }
           const value = evaluate(arg)
           const values = { arg: toSource(arg) }

@@ -678,6 +678,7 @@ export function parse(source: string): Program {
       const kind = args[i].kind
       // %s prints text: a "string" or a char array, named on its own (which one is checked when it runs).
       if (specifier === 's' && kind !== 'string' && kind !== 'var') throw new CodeError(line, 'codeError.printfS')
+      if (specifier === 'p' && kind === 'string') throw new CodeError(line, 'codeError.printfPointer', { arg: toSource(args[i]) })
       if (specifier !== 's' && kind === 'string') throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
     })
 
@@ -856,7 +857,7 @@ export function parse(source: string): Program {
   }
 }
 
-/** Returns the conversion letters in a printf or scanf format ("d", "f", "s", and "c" for printf), rejecting any others. */
+/** Returns the conversion letters in a printf or scanf format ("d", "f", "s", and "c" and "p" for printf), rejecting any others. */
 function readFormatSpecifiers(format: string, line: number, fn: 'printf' | 'scanf' = 'printf'): string[] {
   const specifiers: string[] = []
   for (let i = 0; i < format.length; i++) {
@@ -868,7 +869,7 @@ function readFormatSpecifiers(format: string, line: number, fn: 'printf' | 'scan
     // Read up to the conversion letter so "%.2f" or "%5d" is reported as a whole.
     const match = /^%[^A-Za-z%]*[A-Za-z]?/.exec(format.slice(i))
     const placeholder = match ? match[0] : '%'
-    const allowed = fn === 'printf' ? ['%d', '%f', '%c', '%s'] : ['%d', '%f', '%s']
+    const allowed = fn === 'printf' ? ['%d', '%f', '%c', '%s', '%p'] : ['%d', '%f', '%s']
     if (!allowed.includes(placeholder)) {
       throw new UnsupportedConstructError(
         line,
