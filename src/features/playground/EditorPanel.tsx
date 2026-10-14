@@ -11,6 +11,7 @@ import { usesScanf } from '../../engine/interpreter'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
 import { cAutocomplete } from './cCompletions'
+import CopyCodeButton from './CopyCodeButton'
 import { cLanguage, codeMirrorTheme, execLineHighlight } from './codeMirrorTheme'
 
 // Only C is supported in this version; the others are shown as coming later.
@@ -83,6 +84,7 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
             {t('button.reset')}
           </Button>
           <Button onClick={onRun}>{t('button.run')}</Button>
+          <CopyCodeButton code={code} />
           <MaximizeButton
             isMaximized={isMaximized}
             label={isMaximized ? t('layout.restore') : t('layout.expandEditor')}

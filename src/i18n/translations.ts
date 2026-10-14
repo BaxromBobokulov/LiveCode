@@ -25,6 +25,9 @@ const en = {
   'playback.speed': 'Speed',
 
   'editor.language': 'Programming language',
+  'editor.copy': 'Copy code',
+  'editor.copied': 'Copied',
+  'editor.copyFailed': "Couldn't copy the code",
   'editor.input': 'Input',
   'editor.inputHint': 'Values for scanf, separated by spaces, e.g. 5 2.5',
   'editor.inputEdit': 'Edit',
@@ -406,6 +409,9 @@ const uz: Record<TranslationKey, string> = {
   'playback.speed': 'Tezlik',
 
   'editor.language': 'Dasturlash tili',
+  'editor.copy': 'Kodni nusxalash',
+  'editor.copied': 'Nusxalandi',
+  'editor.copyFailed': "Kodni nusxalab bo'lmadi",
   'editor.input': 'Kiritish',
   'editor.inputHint': "scanf uchun qiymatlar, bo'sh joy bilan ajratilgan, masalan 5 2.5",
   'editor.inputEdit': "O'zgartirish",
@@ -791,6 +797,9 @@ const ru: Record<TranslationKey, string> = {
   'playback.speed': 'Скорость',
 
   'editor.language': 'Язык программирования',
+  'editor.copy': 'Копировать код',
+  'editor.copied': 'Скопировано',
+  'editor.copyFailed': 'Не удалось скопировать код',
   'editor.input': 'Ввод',
   'editor.inputHint': 'Значения для scanf через пробел, например 5 2.5',
   'editor.inputEdit': 'Изменить',
