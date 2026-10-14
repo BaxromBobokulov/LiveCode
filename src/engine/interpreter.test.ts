@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { examples } from '../data/examples'
 import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
@@ -456,13 +456,42 @@ describe('runUserCode', () => {
     expect(stepsOf(source)).toEqual(steps)
   })
 
-  it('picks new rand() numbers on each Run when there is no srand()', () => {
-    const source = lines('int main() {', '    int a = rand();', '    int b = rand();', '    int c = rand();', '    return 0;', '}')
-    const values = (steps: Step[]) => steps[2].variables.map((v) => Number(v.value))
-    const first = values(stepsOf(source))
-    expect(first.every((v) => v >= 0 && v <= 32767)).toBe(true)
-    // Three numbers from 0 to 32767 all matching by chance is practically impossible.
-    expect(values(stepsOf(source))).not.toEqual(first)
+  it('starts from seed 1 when there is no srand(), like real C', () => {
+    const source = lines('int main() {', '    int a = rand();', '    int b = rand();', '    return 0;', '}')
+    const values = (steps: Step[]) => steps[1].variables.map((v) => v.value)
+    // The same as after srand(1): every Run gives these same numbers.
+    expect(values(stepsOf(source))).toEqual(['16838', '5758'])
+    expect(values(stepsOf(source))).toEqual(['16838', '5758'])
+  })
+
+  it('seeds with srand(time(NULL)), so a Run in a later second gets new numbers', () => {
+    const source = lines(
+      '#include <stdlib.h>',
+      '#include <time.h>',
+      'int main() {',
+      '    srand(time(NULL));',
+      '    int a = rand();',
+      '    return 0;',
+      '}',
+    )
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1_700_000_000_500) // 1700000000 seconds and a half since 1970
+      const first = stepsOf(source)
+      expect(english(first[0])).toBe(
+        'time(NULL) gives the current time: 1700000000 seconds since 1 January 1970. ' +
+          'Seed the random numbers with time(NULL) (1700000000). The time changes every second, so each Run gets different rand() numbers.',
+      )
+      // Within the same second the seed, and so the whole trace, is the same, as in real C.
+      vi.setSystemTime(1_700_000_000_900)
+      expect(stepsOf(source)).toEqual(first)
+
+      vi.setSystemTime(1_700_000_001_000)
+      const later = stepsOf(source)
+      expect(later[1].variables).not.toEqual(first[1].variables)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('checks how rand and srand are called', () => {
@@ -475,6 +504,9 @@ describe('runUserCode', () => {
     expect(error('    int x = rand(5);').text.key).toBe('codeError.argCount')
     expect(error('    srand();').text.key).toBe('codeError.argCount')
     expect(error('    int x = srand(1);').text.key).toBe('codeError.voidValue')
+    // time() only takes NULL: time(&t) would need a pointer.
+    expect(error('    int t = 0; srand(time(t));').text).toEqual({ key: 'unsupported.timeArg', values: { arg: 't' } })
+    expect(error('    srand(time());').text.key).toBe('codeError.argCount')
     // The rest of <stdlib.h> is still not supported.
     expect(error('    int n = atoi(5);').text).toEqual({ key: 'unsupported.libraryFunction', values: { name: 'atoi' } })
     expect(runUserCode('#include <string.h>\nint main() { return 0; }')).toMatchObject({

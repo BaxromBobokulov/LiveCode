@@ -65,6 +65,14 @@ const completions: Completion[] = [
     // The cursor lands inside the parentheses, where the seed goes.
     apply: snippet('srand(${});'),
   },
+  {
+    label: 'time',
+    type: 'function',
+    detail: 'time(NULL) — the current time in seconds, for a new seed each Run (needs <time.h>)',
+    info: 'srand(time(NULL));',
+    // NULL is the only argument the interpreter accepts here.
+    apply: 'time(NULL)',
+  },
 ]
 
 // Strings and comments are plain text to the program, so typing in them shouldn't pop up code suggestions.

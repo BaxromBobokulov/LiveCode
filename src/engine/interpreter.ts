@@ -151,21 +151,19 @@ function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: num
   }
 }
 
-/**
- * Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order.
- * `seed` starts rand()'s sequence when the program never calls srand(); by default every Run gets a new one.
- */
-export function execute(program: Program, input: string[] = [], seed = Math.floor(Math.random() * 2 ** 32)): Step[] {
+/** Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order. */
+export function execute(program: Program, input: string[] = []): Step[] {
   const steps: Step[] = []
   const frames: Frame[] = []
   let output = ''
   /** How many input values scanf has used so far. */
   let inputUsed = 0
   /**
-   * rand()'s state. Every rand() is worked out right here, while the whole trace is built in one go,
-   * so its number is fixed in the steps: Previous / Next / Auto Play replay it and never pick a new one.
+   * rand()'s state. Every rand() (and time(NULL)) is worked out right here, while the whole trace is built
+   * in one go, so its number is fixed in the steps: Previous / Next / Auto Play replay it and never pick a
+   * new one. Without srand() the seed is 1, as in real C, so every Run gives the same numbers.
    */
-  let randomState = seed >>> 0
+  let randomState = 1
   /**
    * The array the current statement used, and the element or 2D cell it read or wrote (shown as active
    * in the array view). `active` is null when it used the whole array, e.g. printf("%s", name).
@@ -262,6 +260,7 @@ export function execute(program: Program, input: string[] = [], seed = Math.floo
     const fn = program.functions.get(expr.name)
     if (!fn) {
       if (expr.name === 'rand' || expr.name === 'srand') return evaluateRandomCall(expr)
+      if (expr.name === 'time') return evaluateTime(expr)
       if (libraryFunctions.has(expr.name)) {
         throw new UnsupportedConstructError(
           expr.line,
@@ -356,9 +355,11 @@ export function execute(program: Program, input: string[] = [], seed = Math.floo
       const seed = evaluate(expr.args[0])
       const value = convert(seed.value, 'int')
       randomState = value >>> 0
+      const arg = expr.args[0]
       emit(expr.line, {
         kind: 'srand',
-        seed: { source: toSource(expr.args[0]), work: seed.work, result: formatNumber(value, 'int') },
+        seed: { source: toSource(arg), work: seed.work, result: formatNumber(value, 'int') },
+        fromTime: arg.kind === 'call' && arg.name === 'time',
       })
       return null
     }
@@ -366,6 +367,27 @@ export function execute(program: Program, input: string[] = [], seed = Math.floo
     randomState = (Math.imul(randomState, 1103515245) + 12345) >>> 0
     const value = (randomState >>> 16) % (RAND_MAX + 1)
     cellReads.push({ kind: 'rand', value: String(value) })
+    return { type: 'int', value, work: String(value) }
+  }
+
+  /**
+   * `time(NULL)` from <time.h>: the seconds since 1 January 1970, read once while the trace is built.
+   * Only the NULL form is supported; `time(&t)` would need a pointer.
+   */
+  function evaluateTime(expr: Extract<Expr, { kind: 'call' }>): Value {
+    if (expr.args.length !== 1) {
+      throw new CodeError(expr.line, 'codeError.argCount', { name: 'time', expected: 1, given: expr.args.length })
+    }
+    const arg = expr.args[0]
+    if (arg.kind !== 'var' || arg.name !== 'NULL') {
+      throw new UnsupportedConstructError(
+        expr.line,
+        code(`time(${toSource(arg)})`),
+        { key: 'unsupported.timeArg', values: { arg: toSource(arg) } },
+      )
+    }
+    const value = Math.floor(Date.now() / 1000) | 0
+    cellReads.push({ kind: 'time', value: String(value) })
     return { type: 'int', value, work: String(value) }
   }
 

@@ -94,10 +94,11 @@ const en = {
   'unsupported.placeholder': 'The printf placeholder {placeholder} is not supported yet. Only %d, %f, %c and %s work.',
   'unsupported.array3d': 'Arrays with more than two dimensions are not supported yet.',
   'unsupported.string': 'Text strings can only be used in printf, in puts, or to set up a char array, e.g. char name[] = "hi";',
-  'unsupported.include': 'Only #include <stdio.h> and #include <stdlib.h> are supported. Other libraries are not available yet.',
+  'unsupported.include': 'Only #include <stdio.h>, <stdlib.h> and <time.h> are supported. Other libraries are not available yet.',
   'unsupported.directive': 'Preprocessor directives like #define are not supported yet.',
   'unsupported.escape': `The escape {escape} is not supported yet. Only \\n, \\\\, \\" and \\' work, plus \\0 in a single character like '\\0'.`,
-  'unsupported.libraryFunction': '{name}() is not supported yet. The library functions available are printf, puts, scanf, rand and srand.',
+  'unsupported.libraryFunction': '{name}() is not supported yet. The library functions available are printf, puts, scanf, rand, srand and time(NULL).',
+  'unsupported.timeArg': 'Only time(NULL) is supported. Pass NULL instead of {arg}.',
   'unsupported.recursion':
     '{name} is called again while it is still running (recursion). Recursion is not supported yet. Use a loop instead.',
 
@@ -229,6 +230,9 @@ const en = {
     'Declare {type} 2D array {name} with {rows} rows and {cols} columns. They have no values yet (shown as 0).',
   'explain.readCell': 'Read {target} (value {value}).',
   'explain.rand': 'rand() gives the next random number: {value} (always between 0 and 32767).',
+  'explain.time': 'time(NULL) gives the current time: {value} seconds since 1 January 1970.',
+  'explain.srandTime':
+    'Seed the random numbers with {value}. The time changes every second, so each Run gets different rand() numbers.',
   'explain.srand':
     'Seed the random numbers with {value}. The same seed always gives the same rand() numbers, so this program gets the same values on every Run.',
   'explain.assign': 'Set {target} to {value}.',
@@ -438,10 +442,11 @@ const uz: Record<TranslationKey, string> = {
   'unsupported.placeholder': "printf o'rinbosari {placeholder} hali qo'llab-quvvatlanmaydi. Faqat %d, %f, %c va %s ishlaydi.",
   'unsupported.array3d': "Ikkitadan ortiq o'lchovli massivlar hali qo'llab-quvvatlanmaydi.",
   'unsupported.string': 'Matnli satrlarni faqat printf, puts ichida yoki char massivini yaratishda ishlatish mumkin, masalan char name[] = "hi";',
-  'unsupported.include': "Faqat #include <stdio.h> va #include <stdlib.h> qo'llab-quvvatlanadi. Boshqa kutubxonalar hali mavjud emas.",
+  'unsupported.include': "Faqat #include <stdio.h>, <stdlib.h> va <time.h> qo'llab-quvvatlanadi. Boshqa kutubxonalar hali mavjud emas.",
   'unsupported.directive': "#define kabi preprotsessor direktivalari hali qo'llab-quvvatlanmaydi.",
   'unsupported.escape': `{escape} maxsus belgisi hali qo'llab-quvvatlanmaydi. Faqat \\n, \\\\, \\" va \\' ishlaydi, hamda '\\0' kabi bitta belgida \\0.`,
-  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud kutubxona funksiyalari — printf, puts, scanf, rand va srand.",
+  'unsupported.libraryFunction': "{name}() hali qo'llab-quvvatlanmaydi. Mavjud kutubxona funksiyalari — printf, puts, scanf, rand, srand va time(NULL).",
+  'unsupported.timeArg': "Faqat time(NULL) qo'llab-quvvatlanadi. {arg} o'rniga NULL yozing.",
   'unsupported.recursion':
     "{name} hali bajarilayotgan paytda yana chaqirilmoqda (rekursiya). Rekursiya hali qo'llab-quvvatlanmaydi. Uning o'rniga sikldan foydalaning.",
 
@@ -574,6 +579,9 @@ const uz: Record<TranslationKey, string> = {
     "{rows} ta qator va {cols} ta ustunli {type} turidagi {name} ikki o'lchovli massivini e'lon qilamiz. Elementlarning hali qiymati yo'q (0 deb ko'rsatiladi).",
   'explain.readCell': "{target} ni o'qiymiz (qiymati {value}).",
   'explain.rand': "rand() navbatdagi tasodifiy sonni beradi: {value} (har doim 0 dan 32767 gacha).",
+  'explain.time': "time(NULL) hozirgi vaqtni beradi: 1970-yil 1-yanvardan beri {value} soniya.",
+  'explain.srandTime':
+    "Tasodifiy sonlarning boshlang'ich qiymati (seed) {value} qilib o'rnatiladi. Vaqt har soniyada o'zgaradi, shuning uchun har bir ishga tushirishda rand() boshqa sonlarni beradi.",
   'explain.srand':
     "Tasodifiy sonlarning boshlang'ich qiymati (seed) {value} qilib o'rnatiladi. Bir xil seed har doim bir xil rand() sonlarini beradi, shuning uchun bu dastur har safar ishga tushirilganda bir xil qiymatlarni oladi.",
   'explain.assign': '{target} ga qiymat beramiz: {value}.',
@@ -788,10 +796,11 @@ const ru: Record<TranslationKey, string> = {
   'unsupported.placeholder': 'Шаблон printf {placeholder} пока не поддерживается. Работают только %d, %f, %c и %s.',
   'unsupported.array3d': 'Массивы с более чем двумя измерениями пока не поддерживаются.',
   'unsupported.string': 'Текстовые строки можно использовать только в printf, в puts или при создании массива char, например char name[] = "hi";',
-  'unsupported.include': 'Поддерживаются только #include <stdio.h> и #include <stdlib.h>. Другие библиотеки пока недоступны.',
+  'unsupported.include': 'Поддерживаются только #include <stdio.h>, <stdlib.h> и <time.h>. Другие библиотеки пока недоступны.',
   'unsupported.directive': 'Директивы препроцессора вроде #define пока не поддерживаются.',
   'unsupported.escape': `Escape-последовательность {escape} пока не поддерживается. Работают только \\n, \\\\, \\" и \\', а также \\0 в одиночном символе вроде '\\0'.`,
-  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступны только printf, puts, scanf, rand и srand.',
+  'unsupported.libraryFunction': '{name}() пока не поддерживается. Из библиотечных функций доступны только printf, puts, scanf, rand, srand и time(NULL).',
+  'unsupported.timeArg': 'Поддерживается только time(NULL). Передайте NULL вместо {arg}.',
   'unsupported.recursion':
     '{name} вызывается снова, пока ещё выполняется (рекурсия). Рекурсия пока не поддерживается. Используйте цикл.',
 
@@ -924,6 +933,9 @@ const ru: Record<TranslationKey, string> = {
     'Объявляем двумерный массив {name} типа {type}: строк — {rows}, столбцов — {cols}. Значений пока нет (показаны как 0).',
   'explain.readCell': 'Читаем {target} (значение {value}).',
   'explain.rand': 'rand() выдаёт следующее случайное число: {value} (всегда от 0 до 32767).',
+  'explain.time': 'time(NULL) выдаёт текущее время: {value} секунд с 1 января 1970 года.',
+  'explain.srandTime':
+    'Задаём начальное значение (seed) случайных чисел: {value}. Время меняется каждую секунду, поэтому при каждом запуске rand() выдаёт другие числа.',
   'explain.srand':
     'Задаём начальное значение (seed) случайных чисел: {value}. Одно и то же seed всегда даёт одни и те же числа rand(), поэтому при каждом запуске эта программа получает одинаковые значения.',
   'explain.assign': 'Присваиваем {target} значение {value}.',

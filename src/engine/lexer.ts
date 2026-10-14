@@ -29,7 +29,7 @@ const punctuators = [
   '(', ')', '{', '}', '[', ']', ';', ',', '.',
 ]
 
-/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` are skipped. */
+/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` / `<time.h>` are skipped. */
 export function tokenize(source: string): Token[] {
   const tokens: Token[] = []
   let pos = 0
@@ -64,12 +64,12 @@ export function tokenize(source: string): Token[] {
       continue
     }
 
-    // Preprocessor lines: only `#include <stdio.h>` and `#include <stdlib.h>` are allowed, and they are ignored.
+    // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>` and `<time.h>` are allowed, and they are ignored.
     if (char === '#' && atLineStart) {
       let end = source.indexOf('\n', pos)
       if (end === -1) end = source.length
       const directive = source.slice(pos, end).trim()
-      if (!/^#\s*include\s*<(stdio|stdlib)\.h>$/.test(directive)) {
+      if (!/^#\s*include\s*<(stdio|stdlib|time)\.h>$/.test(directive)) {
         const isInclude = /^#\s*include/.test(directive)
         throw new UnsupportedConstructError(
           line,
