@@ -18,6 +18,8 @@ type PlaygroundState = {
   userProgram: ExampleProgram | null
   /** Why the last Run failed. The previous trace stays on screen. */
   runError: RunError | null
+  /** The code that last Run failed on, so an edit after it can be spotted (see `staleness`). */
+  failedCode: string | null
   /** The Input field's text: the values scanf reads, separated by spaces. */
   input: string
   /** The last Run failed for lack of Input values. The field shows an error state until the user types or a Run succeeds. */
@@ -34,7 +36,10 @@ type PlaygroundState = {
   expandInput: () => void
   next: () => void
   prev: () => void
-  /** Go back to the first step, stop auto play, and empty the Input field (opened up again). */
+  /**
+   * Go back to the first step, stop auto play, clear the error, and empty the Input field (opened up again).
+   * The code in the editor is left exactly as it is.
+   */
   reset: () => void
   /** Trace the code in the editor and play it from the first step. */
   run: () => void
@@ -44,6 +49,21 @@ type PlaygroundState = {
 /** The program whose steps the Playground is showing. */
 function currentProgram(state: Pick<PlaygroundState, 'userProgram' | 'exampleId'>): ExampleProgram {
   return state.userProgram ?? getExample(state.exampleId)
+}
+
+/**
+ * What on screen no longer matches the code in the editor, because the code was edited after it was made.
+ * `traceStale`: the steps shown were traced from different code (an edit, or a failed Run, which keeps the
+ * old trace). `errorStale`: the code was edited after the Run that failed. Stale things are dimmed, and
+ * a stale trace can't be stepped through, until a Run (or undoing the edit) makes them match again.
+ */
+export function staleness(
+  state: Pick<PlaygroundState, 'code' | 'userProgram' | 'exampleId' | 'runError' | 'failedCode'>,
+) {
+  return {
+    traceStale: state.code !== currentProgram(state).code.join('\n'),
+    errorStale: state.runError !== null && state.code !== state.failedCode,
+  }
 }
 
 export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
@@ -57,6 +77,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     code: examples[0].code.join('\n'),
     userProgram: null,
     runError: null,
+    failedCode: null,
     input: '',
     inputMissing: false,
     inputCollapsed: false,
@@ -70,6 +91,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         code: getExample(id).code.join('\n'),
         userProgram: null,
         runError: null,
+        failedCode: null,
         inputMissing: false,
         inputCollapsed: false,
         stepIndex: 0,
@@ -77,21 +99,39 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         activeTab: 'playground',
       }),
 
-    setCode: (code) => set({ code }),
+    // An edit can leave the trace on screen out of date, so auto play stops.
+    setCode: (code) => {
+      if (code !== get().code) set({ code, isPlaying: false })
+    },
 
     setInput: (input) => set({ input, inputMissing: false }),
 
     expandInput: () => set({ inputCollapsed: false }),
 
+    // Stepping is off while the trace no longer matches the code; only a Run makes a new one.
     next: () => {
+      if (staleness(get()).traceStale) return
       const nextIndex = Math.min(get().stepIndex + 1, lastStepIndex())
       // Auto play stops by itself on the last step.
       set({ stepIndex: nextIndex, isPlaying: get().isPlaying && nextIndex < lastStepIndex() })
     },
 
-    prev: () => set({ stepIndex: Math.max(get().stepIndex - 1, 0), isPlaying: false }),
+    prev: () => {
+      if (staleness(get()).traceStale) return
+      set({ stepIndex: Math.max(get().stepIndex - 1, 0), isPlaying: false })
+    },
 
-    reset: () => set({ stepIndex: 0, isPlaying: false, input: '', inputMissing: false, inputCollapsed: false }),
+    // The code is left as typed, so a trace that no longer matches it stays stale until a Run.
+    reset: () =>
+      set({
+        stepIndex: 0,
+        isPlaying: false,
+        runError: null,
+        failedCode: null,
+        input: '',
+        inputMissing: false,
+        inputCollapsed: false,
+      }),
 
     run: () => {
       const { code, exampleId, input } = get()
@@ -100,7 +140,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       // Unchanged example code plays its hand-authored trace.
       if (code === example.code.join('\n')) {
         track('code_run', { source: 'example' })
-        set({ userProgram: null, runError: null, inputMissing: false, stepIndex: 0, isPlaying: true })
+        set({ userProgram: null, runError: null, failedCode: null, inputMissing: false, stepIndex: 0, isPlaying: true })
         return
       }
 
@@ -114,6 +154,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         // The Input field opens up again, since the problem may be in its values.
         set({
           runError: result.error,
+          failedCode: code,
           inputMissing: isMissingInput(result.error),
           inputCollapsed: false,
           stepIndex: 0,
@@ -124,6 +165,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       set({
         userProgram: { id: 'user', title: 'Your Code', tag: 'Custom', code: code.split('\n'), steps: result.steps },
         runError: null,
+        failedCode: null,
         inputMissing: false,
         // The values were used, so fold them into a summary; there's nothing to fold when none were typed.
         inputCollapsed: usesScanf(code) && input.trim() !== '',
@@ -134,6 +176,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
 
     toggleAutoplay: () => {
       const { isPlaying, stepIndex } = get()
+      if (staleness(get()).traceStale) return
       if (isPlaying) {
         set({ isPlaying: false })
       } else if (stepIndex === lastStepIndex()) {
@@ -151,4 +194,11 @@ export function useCurrentExample() {
   const userProgram = usePlaygroundStore((state) => state.userProgram)
   const exampleId = usePlaygroundStore((state) => state.exampleId)
   return currentProgram({ userProgram, exampleId })
+}
+
+/** Whether the trace and the error on screen are out of date with the editor's code (see `staleness`). */
+export function useStaleness() {
+  const traceStale = usePlaygroundStore((state) => staleness(state).traceStale)
+  const errorStale = usePlaygroundStore((state) => staleness(state).errorStale)
+  return { traceStale, errorStale }
 }

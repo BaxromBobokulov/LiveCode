@@ -27,6 +27,7 @@ export const dark = {
   cursor: '#AEAFAD',
   selection: 'rgba(38, 79, 120, 0.85)',
   execLine: 'rgba(255, 255, 255, 0.07)',
+  staleLine: 'rgba(255, 255, 255, 0.03)',
 
   // VS Code Dark+ suggestion dropdown
   popup: '#252526',
@@ -75,6 +76,12 @@ const editorChrome = EditorView.theme(
     // every syntax color at 4.5:1 or more; the line number turns text-colored, as dimmed gray it would not.
     '.cm-execLine-error': { backgroundColor: 'color-mix(in srgb, var(--color-error) 7%, transparent)' },
     '.cm-gutterElement.cm-execLine-error': { boxShadow: 'inset 3px 0 0 var(--color-error)', color: dark.text },
+    // Either tone, once the code was edited after it was made (the line may now hold different code):
+    // a fainter overlay and a gray bar, so it reads as "out of date". After the two rules above, so it wins.
+    // On this overlay the dimmed line number would be 4.15:1, so it turns text-colored (10.34:1) like the
+    // error tone; the gray bar is a graphic, 4.15:1 against the 3:1 non-text minimum.
+    '.cm-execLine-stale': { backgroundColor: dark.staleLine },
+    '.cm-gutterElement.cm-execLine-stale': { boxShadow: `inset 3px 0 0 ${dark.lineNumber}`, color: dark.text },
 
     // Autocomplete dropdown, styled like VS Code's suggestion list.
     '.cm-tooltip.cm-tooltip-autocomplete': {
@@ -143,18 +150,17 @@ class ExecLineMarker extends GutterMarker {
     this.elementClass = elementClass
   }
 }
-const execLineMarkers = {
-  current: new ExecLineMarker('cm-execLine'),
-  error: new ExecLineMarker('cm-execLine cm-execLine-error'),
-}
 
 /**
  * Highlights one line (1-based) in both the code and the line-number gutter:
- * blue for the current step, red for the line a Run stopped on with an error.
+ * blue for the current step, red for the line a Run stopped on with an error,
+ * dimmed in either tone when `stale` (the code was edited since, see `staleness` in playgroundStore).
  */
-export function execLineHighlight(line: number, tone: 'current' | 'error' = 'current'): Extension {
+export function execLineHighlight(line: number, tone: 'current' | 'error' = 'current', stale = false): Extension {
   const lineStart = (doc: EditorView['state']['doc']) => doc.line(Math.min(Math.max(line, 1), doc.lines)).from
-  const marker = execLineMarkers[tone]
+  const marker = new ExecLineMarker(
+    ['cm-execLine', tone === 'error' && 'cm-execLine-error', stale && 'cm-execLine-stale'].filter(Boolean).join(' '),
+  )
 
   return [
     EditorView.decorations.compute(['doc'], (state) =>

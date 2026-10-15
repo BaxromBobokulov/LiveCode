@@ -9,7 +9,7 @@ import MaximizeButton from '../../components/MaximizeButton'
 import Select from '../../components/Select'
 import { usesScanf } from '../../engine/interpreter'
 import { useTranslation } from '../../i18n/useTranslation'
-import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
+import { useCurrentExample, usePlaygroundStore, useStaleness } from '../../store/playgroundStore'
 import { cAutocomplete } from './cCompletions'
 import CopyCodeButton from './CopyCodeButton'
 import ExportImageButton from './ExportImageButton'
@@ -50,10 +50,14 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   const { t, exampleText } = useTranslation()
   const inputId = useId()
 
+  const { traceStale, errorStale } = useStaleness()
+
   const step = example.steps[stepIndex]
   // While the error box is showing, the editor points at the same line, in the error color.
+  // After an edit that line number may hold different code, so the highlight is dimmed until the next Run.
   const highlightLine = runError ? runError.line : step.line
   const highlightTone = runError ? 'error' : 'current'
+  const highlightStale = runError ? errorStale : traceStale
   // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) and undo/redo
   // (history + Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are added here explicitly.
   // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,
@@ -69,9 +73,9 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
       Prec.high(keymap.of([{ key: 'Tab', run: acceptCompletion }])),
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
       cLanguage,
-      execLineHighlight(highlightLine, highlightTone),
+      execLineHighlight(highlightLine, highlightTone, highlightStale),
     ],
-    [highlightLine, highlightTone],
+    [highlightLine, highlightTone, highlightStale],
   )
 
   return (

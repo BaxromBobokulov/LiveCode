@@ -6,7 +6,7 @@ import ProgressBar from '../../components/ProgressBar'
 import { UnsupportedConstructError } from '../../engine/errors'
 import type { PhrasePart } from '../../i18n/formatPhrase'
 import { useTranslation } from '../../i18n/useTranslation'
-import { useCurrentExample, usePlaygroundStore } from '../../store/playgroundStore'
+import { useCurrentExample, usePlaygroundStore, useStaleness } from '../../store/playgroundStore'
 import ArrayVisualizer from './ArrayVisualizer'
 import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
@@ -46,6 +46,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const prev = usePlaygroundStore((state) => state.prev)
   const toggleAutoplay = usePlaygroundStore((state) => state.toggleAutoplay)
   const runError = usePlaygroundStore((state) => state.runError)
+  const { traceStale, errorStale } = useStaleness()
   const { t, phrase, phraseParts } = useTranslation()
 
   const step = example.steps[stepIndex]
@@ -56,6 +57,13 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const reduceMotion = useReducedMotion()
   // text-explanation follows the reader's A− / A+ choice (settingsStore)
   const explanationClass = 'rounded-container border border-border bg-surface px-4.5 py-4 text-explanation text-text'
+  // Out of date with the code (see `staleness`): a dashed textMuted outline marks it until the next Run.
+  // The text keeps its own colors, so every contrast pair inside stays as verified; the outline is
+  // 4.97:1 (light) / 7.54:1 (dark) on the panel, over the 3:1 needed for a graphic.
+  const staleOutline = 'rounded-container outline-2 outline-offset-4 outline-dashed outline-textMuted'
+  const traceClass = `flex flex-col gap-4.5 ${traceStale ? staleOutline : ''}`
+  // Shown while the thing on screen (the error box if there is one, the trace otherwise) is out of date.
+  const showStaleNote = runError ? errorStale : traceStale
 
   return (
     <section
@@ -79,25 +87,40 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
       <div className="flex flex-col gap-4.5 p-4.5">
         {/* The speed picker wraps onto its own line when the panel is too narrow for all four */}
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" className="flex-auto" onClick={prev} disabled={stepIndex === 0}>
+          <Button variant="secondary" className="flex-auto" onClick={prev} disabled={traceStale || stepIndex === 0}>
             {t('button.previous')}
           </Button>
-          <Button variant="secondary" className="flex-auto" onClick={toggleAutoplay}>
+          <Button variant="secondary" className="flex-auto" onClick={toggleAutoplay} disabled={traceStale}>
             {isPlaying ? t('button.pause') : t('button.autoPlay')}
           </Button>
-          <Button className="flex-auto" onClick={next} disabled={isLastStep}>
+          <Button className="flex-auto" onClick={next} disabled={traceStale || isLastStep}>
             {t('button.next')}
           </Button>
           <SpeedControl />
         </div>
 
-        <ProgressBar value={(stepIndex + 1) / totalSteps} />
+        {showStaleNote && (
+          <p
+            role="status"
+            className="rounded-container border border-dashed border-textMuted bg-surface px-3.5 py-3 text-body-md text-text"
+          >
+            {t('execution.stale')}
+          </p>
+        )}
 
-        <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
+        <div className={traceClass}>
+          <ProgressBar value={(stepIndex + 1) / totalSteps} />
+          <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
+        </div>
 
         {/* The last Run failed: say where and why. The previous trace stays below. */}
         {runError && (
-          <div role="alert" className="rounded-container border border-error bg-errorTint px-3.5 py-3 text-body-md">
+          <div
+            role="alert"
+            className={`rounded-container border border-error bg-errorTint px-3.5 py-3 text-body-md ${
+              errorStale ? staleOutline : ''
+            }`}
+          >
             <p className="font-semibold text-error">
               {runError instanceof UnsupportedConstructError
                 ? t('error.unsupported', { construct: phrase(runError.construct) })
@@ -110,27 +133,29 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
           </div>
         )}
 
-        {reduceMotion ? (
-          <p aria-live="polite" className={explanationClass}>
-            <PhraseText parts={phraseParts(step.explanation)} />
-          </p>
-        ) : (
-          // A new key each step remounts the box, so a fast step replaces the fade instead of queuing behind it
-          <motion.p
-            key={stepKey}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            aria-live="polite"
-            className={explanationClass}
-          >
-            <PhraseText parts={phraseParts(step.explanation)} />
-          </motion.p>
-        )}
+        <div className={traceClass}>
+          {reduceMotion ? (
+            <p aria-live="polite" className={explanationClass}>
+              <PhraseText parts={phraseParts(step.explanation)} />
+            </p>
+          ) : (
+            // A new key each step remounts the box, so a fast step replaces the fade instead of queuing behind it
+            <motion.p
+              key={stepKey}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              aria-live="polite"
+              className={explanationClass}
+            >
+              <PhraseText parts={phraseParts(step.explanation)} />
+            </motion.p>
+          )}
 
-        {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
-        {step.array && <ArrayVisualizer array={step.array} />}
-        <ConsolePanel output={step.output} />
+          {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
+          {step.array && <ArrayVisualizer array={step.array} />}
+          <ConsolePanel output={step.output} />
+        </div>
       </div>
     </section>
   )

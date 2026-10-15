@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CodeError } from '../engine/errors'
-import { usePlaygroundStore } from './playgroundStore'
+import { staleness, usePlaygroundStore } from './playgroundStore'
 
 const lines = (...code: string[]) => code.join('\n')
 
@@ -50,5 +50,64 @@ describe('playgroundStore run / reset', () => {
     expect(store.getState().stepIndex).toBe(0)
     expect(store.getState().isPlaying).toBe(false)
     expect(store.getState().userProgram?.code).toEqual(fixed.split('\n'))
+  })
+
+  it('Reset clears the error but keeps the edited code, and the same Run shows the error again', () => {
+    store.getState().setCode(broken)
+    store.getState().run()
+    store.getState().reset()
+    expect(store.getState().runError).toBeNull()
+    expect(store.getState().code).toBe(broken)
+
+    store.getState().run()
+    expect(store.getState().runError?.line).toBe(3)
+  })
+})
+
+describe('playgroundStore stale trace', () => {
+  beforeEach(() => store.setState(store.getInitialState(), true))
+
+  it('an edit mid-step freezes the trace until the next Run', () => {
+    store.getState().setCode(fixed)
+    store.getState().run()
+    store.getState().next()
+    expect(store.getState().stepIndex).toBe(1)
+
+    store.getState().setCode(fixed.replace('i++;', 'i += 2;'))
+    expect(staleness(store.getState())).toEqual({ traceStale: true, errorStale: false })
+    expect(store.getState().isPlaying).toBe(false)
+    store.getState().next()
+    store.getState().prev()
+    store.getState().toggleAutoplay()
+    expect(store.getState().stepIndex).toBe(1)
+    expect(store.getState().isPlaying).toBe(false)
+
+    store.getState().run()
+    expect(staleness(store.getState()).traceStale).toBe(false)
+    expect(store.getState().userProgram!.steps.at(-1)!.output).toBe('i = 3\n')
+  })
+
+  it('an edit after a failed Run marks the error stale; the old trace stays stale', () => {
+    store.getState().setCode(broken)
+    store.getState().run()
+    expect(staleness(store.getState())).toEqual({ traceStale: true, errorStale: false })
+
+    store.getState().setCode('\n' + broken)
+    expect(staleness(store.getState())).toEqual({ traceStale: true, errorStale: true })
+  })
+
+  it('Reset after a failed Run keeps the old trace stale, since it no longer matches the code', () => {
+    store.getState().setCode(broken)
+    store.getState().run()
+    store.getState().reset()
+    expect(staleness(store.getState())).toEqual({ traceStale: true, errorStale: false })
+  })
+
+  it('undoing back to the traced code makes the trace current again', () => {
+    const original = store.getState().code
+    store.getState().setCode(original + '\n')
+    expect(staleness(store.getState()).traceStale).toBe(true)
+    store.getState().setCode(original)
+    expect(staleness(store.getState()).traceStale).toBe(false)
   })
 })
