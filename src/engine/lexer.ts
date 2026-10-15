@@ -36,6 +36,8 @@ export function tokenize(source: string): Token[] {
   let line = 1
   // True until something other than spaces appears on the current line (for `#` directives).
   let atLineStart = true
+  // The line of the last #include, so anything after it on that line can be rejected.
+  let directiveLine = 0
 
   while (pos < source.length) {
     const char = source[pos]
@@ -65,21 +67,29 @@ export function tokenize(source: string): Token[] {
     }
 
     // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>` and `<time.h>` are allowed, and they are ignored.
+    // Only the directive itself is read here; the rest of the line goes through the loop as usual,
+    // so spaces and comments after it are skipped like anywhere else.
     if (char === '#' && atLineStart) {
-      let end = source.indexOf('\n', pos)
-      if (end === -1) end = source.length
-      const directive = source.slice(pos, end).trim()
-      if (!/^#\s*include\s*<(stdio|stdlib|time)\.h>$/.test(directive)) {
+      const include = /^#[ \t]*include[ \t]*<([^>\n]*)>/.exec(source.slice(pos))
+      if (!include || !['stdio.h', 'stdlib.h', 'time.h'].includes(include[1])) {
+        let end = source.indexOf('\n', pos)
+        if (end === -1) end = source.length
+        const directive = source.slice(pos, end).trim()
         const isInclude = /^#\s*include/.test(directive)
         throw new UnsupportedConstructError(
           line,
-          code(isInclude ? directive : directive.split(/\s+/)[0]),
+          code(include ? include[0] : isInclude ? directive : directive.split(/\s+/)[0]),
           { key: isInclude ? 'unsupported.include' : 'unsupported.directive' },
         )
       }
-      pos = end
+      pos += include[0].length
+      directiveLine = line
+      atLineStart = false
       continue
     }
+
+    // Nothing but spaces and comments may follow an #include on its line (e.g. no `;`).
+    if (line === directiveLine) throw new CodeError(line, 'codeError.unexpectedChar', { char })
 
     atLineStart = false
 

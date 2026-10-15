@@ -514,6 +514,33 @@ describe('runUserCode', () => {
     })
   })
 
+  it('allows comments after an #include on the same line', () => {
+    const steps = stepsOf(
+      lines(
+        '#include <stdio.h> // test comment',
+        '#include <stdlib.h>   // comment   ',
+        '#include <time.h> /* comment */',
+        'int main() {',
+        '    printf("hi\\n");',
+        '    return 0;',
+        '}',
+      ),
+    )
+    expect(steps.at(-1)?.output).toBe('hi\n')
+
+    // An unsupported library is still rejected, comment or not, and the error names just the include.
+    expect(runUserCode('#include <math.h> // comment\nint main() { return 0; }')).toMatchObject({
+      error: { line: 1, text: { key: 'unsupported.include' } },
+    })
+    // Real code after the include on the same line is still an error.
+    expect(runUserCode('#include <stdio.h>;\nint main() { return 0; }')).toMatchObject({
+      error: { line: 1, text: { key: 'codeError.unexpectedChar', values: { char: ';' } } },
+    })
+    expect(runUserCode('#include <stdio.h> int main() { return 0; }')).toMatchObject({
+      error: { line: 1, text: { key: 'codeError.unexpectedChar' } },
+    })
+  })
+
   it('leaves a loop early with break', () => {
     const steps = stepsOf(
       lines(
