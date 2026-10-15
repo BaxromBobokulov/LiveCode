@@ -27,6 +27,10 @@ export type Variable = {
   scope?: string
   /** For a pointer: the address of the variable it points to, so the panel can draw an arrow to that box. */
   pointsTo?: string
+  /** For a struct variable, e.g. `struct Point p`: the struct's name, "Point". Its fields are in `fields`. */
+  structType?: string
+  /** A struct variable's fields in the order they are declared, each with a display-ready value ("?" before it has one). */
+  fields?: { name: string; value: string }[]
 }
 
 /**
@@ -35,6 +39,14 @@ export type Variable = {
  */
 export function variableKey(variable: Pick<Variable, 'name' | 'scope'>): string {
   return variable.scope ? `${variable.name}@${variable.scope}` : variable.name
+}
+
+/**
+ * How `Step.changed` names one field of a struct variable when only that field changed, e.g. "p.x".
+ * When the whole struct changed (declared, or copied with `p2 = p1;`) `changed` names just the variable.
+ */
+export function fieldKey(variable: Pick<Variable, 'name' | 'scope'>, field: string): string {
+  return `${variableKey(variable)}.${field}`
 }
 
 /** The array drawn in the array visualization. */

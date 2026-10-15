@@ -29,9 +29,11 @@ export type Expr =
   | { kind: 'address'; line: number; name: string }
   /** `NULL`: the empty pointer, which points to nothing. */
   | { kind: 'null'; line: number }
+  /** `p.x`: one field of the struct variable `name`. Only a variable's name can come before the `.`. */
+  | { kind: 'field'; line: number; name: string; field: string }
 
-/** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]` or `*p`. */
-export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' }>
+/** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]`, `*p` or `p.x`. */
+export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' | 'field' }>
 
 export type Declarator = {
   line: number
@@ -53,8 +55,23 @@ export type Declarator = {
   stringInit: string | null
 }
 
+/** One variable in `struct Point p, q = {1, 2}, r = p;`. */
+export type StructDeclarator = {
+  line: number
+  name: string
+  /** `= {1, 2}`: values for the fields, in the order the fields are declared. */
+  values: Expr[] | null
+  /** `= p`: another struct variable to copy every field from. */
+  copyOf: Expr | null
+}
+
+/** `struct Point { int x; int y; };` — the fields in the order they are declared. */
+export type StructDef = { name: string; fields: { name: string; type: NumType }[]; line: number }
+
 export type Stmt =
   | { kind: 'declare'; line: number; type: NumType; declarators: Declarator[] }
+  /** `struct Point p;` — `structName` is "Point", which the parser has already checked is defined. */
+  | { kind: 'declareStruct'; line: number; structName: string; declarators: StructDeclarator[] }
   | { kind: 'assign'; line: number; target: Target; op: '=' | '+=' | '-=' | '*=' | '/=' | '%='; value: Expr }
   | { kind: 'update'; line: number; target: Target; op: '++' | '--' }
   | { kind: 'expr'; line: number; expr: Expr }
@@ -100,6 +117,8 @@ export type FunctionDecl = {
 
 export type Program = {
   functions: Map<string, FunctionDecl>
+  /** Struct types defined at the top of the program, by name ("Point" for `struct Point`). */
+  structs: Map<string, StructDef>
   /** Whether the program declares a pointer, so the Variables panel shows each variable's address. */
   usesPointers: boolean
 }
@@ -152,6 +171,8 @@ export function toSource(expr: Expr): string {
       return `&${expr.name}`
     case 'null':
       return 'NULL'
+    case 'field':
+      return `${expr.name}.${expr.field}`
   }
 }
 
@@ -188,7 +209,6 @@ const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> 
   short: [code('short'), onlyBasicTypes],
   unsigned: [code('unsigned'), onlyBasicTypes],
   signed: [code('signed'), onlyBasicTypes],
-  struct: [code('struct'), { key: 'unsupported.struct' }],
   union: [code('union'), { key: 'unsupported.union' }],
   enum: [code('enum'), { key: 'unsupported.enum' }],
   typedef: notYet('typedef'),
@@ -219,8 +239,9 @@ const unsupportedOperators: Record<string, [construct: Phrase, message: Phrase]>
   '<<': bitwise('<<'),
   '>>': bitwise('>>'),
   '?': [{ key: 'construct.ternary' }, { key: 'unsupported.ternary' }],
-  '->': [{ key: 'construct.arrow' }, { key: 'unsupported.pointersStructs' }],
-  '.': [{ key: 'construct.structMember' }, { key: 'unsupported.struct' }],
+  '->': [{ key: 'construct.arrow' }, { key: 'unsupported.arrow' }],
+  // `p.x` is read where the name is; a `.` anywhere else, like `(p).x`, ends up here.
+  '.': [{ key: 'construct.structMember' }, { key: 'unsupported.memberAccess' }],
 }
 
 const assignmentOps = ['=', '+=', '-=', '*=', '/=', '%=']
@@ -247,6 +268,11 @@ function rejectUnsupportedOperator(token: Token) {
   if (bitwiseAssignmentOps.includes(token.text)) {
     throw new UnsupportedConstructError(token.line, ...bitwise(token.text))
   }
+}
+
+/** A struct feature outside the supported subset, e.g. an array of structs. */
+function structError(line: number, construct: TranslationKey, key: TranslationKey): UnsupportedConstructError {
+  return new UnsupportedConstructError(line, { key: construct }, { key })
 }
 
 /** A pointer feature outside the supported subset, e.g. `int **p` or `p + 1`. */
@@ -304,15 +330,21 @@ export function parse(source: string): Program {
     throw new CodeError(token.line, 'codeError.expectedName', { found: describe(token) })
   }
 
-  // ----- Top level: function definitions only -----
+  // ----- Top level: function and struct definitions only -----
 
   const functions = new Map<string, FunctionDecl>()
+  const structs = new Map<string, StructDef>()
   /** How many loops the statement being parsed is inside, so a `break` outside any loop is caught. */
   let loopDepth = 0
   let usesPointers = false
 
   while (peek().kind !== 'eof') {
     const token = peek()
+    if (is('struct') && is('{', 2)) {
+      parseStructDefinition()
+      continue
+    }
+    if (is('struct')) rejectTopLevelStruct()
     rejectUnsupportedKeyword(token)
     if (!isType() && !is('void')) {
       throw new CodeError(token.line, 'codeError.expectedFunction', { found: describe(token) })
@@ -349,7 +381,72 @@ export function parse(source: string): Program {
     throw new CodeError(tokens[pos].line, 'codeError.noMain')
   }
 
-  return { functions, usesPointers }
+  return { functions, structs, usesPointers }
+
+  /**
+   * `struct Point { int x; int y; };` Fields are int, float or char, each declared once.
+   * A struct can only be used below its definition, as in C.
+   */
+  function parseStructDefinition() {
+    advance() // struct
+    const nameToken = expectIdentifier()
+    const name = nameToken.text
+    if (structs.has(name)) throw new CodeError(nameToken.line, 'codeError.structDefinedTwice', { name })
+    expect('{')
+    const fields: StructDef['fields'] = []
+    while (!is('}')) {
+      const typeToken = peek()
+      if (typeToken.kind === 'eof') throw new CodeError(typeToken.line, 'codeError.unclosedBrace')
+      if (is('struct')) throw structError(typeToken.line, 'construct.nestedStruct', 'unsupported.nestedStruct')
+      rejectUnsupportedKeyword(typeToken)
+      if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedFieldType', { found: describe(typeToken) })
+      const type = advance().text as NumType
+      do {
+        if (is('*')) throw pointerError(peek().line, 'unsupported.pointerField')
+        const fieldToken = expectIdentifier()
+        const field = fieldToken.text
+        if (is('[')) throw structError(fieldToken.line, 'construct.arrayField', 'unsupported.arrayField')
+        if (fields.some((f) => f.name === field)) throw new CodeError(fieldToken.line, 'codeError.fieldTwice', { name, field })
+        if (is('=')) throw new CodeError(fieldToken.line, 'codeError.fieldDefault', { name, field })
+        fields.push({ name: field, type })
+      } while (accept(','))
+      expect(';')
+    }
+    const close = expect('}')
+    if (fields.length === 0) throw new CodeError(close.line, 'codeError.emptyStruct', { name })
+    // `struct Point { ... } p;` also declares p, outside any function.
+    if (peek().kind === 'identifier') {
+      throw new UnsupportedConstructError(
+        peek().line,
+        { key: 'construct.globalVariable' },
+        { key: 'unsupported.globalVariable', values: { name: peek().text } },
+      )
+    }
+    expect(';')
+    structs.set(name, { name, fields, line: nameToken.line })
+  }
+
+  /** `struct Point make() {`, `struct Point *find() {` or `struct Point origin;` outside a function. */
+  function rejectTopLevelStruct(): never {
+    advance() // struct
+    structType()
+    if (is('*')) throw structError(peek().line, 'construct.structPointer', 'unsupported.structPointer')
+    const nameToken = expectIdentifier()
+    if (is('(')) throw structError(nameToken.line, 'construct.structReturn', 'unsupported.structReturn')
+    throw new UnsupportedConstructError(
+      nameToken.line,
+      { key: 'construct.globalVariable' },
+      { key: 'unsupported.globalVariable', values: { name: nameToken.text } },
+    )
+  }
+
+  /** The name after `struct`, which must be a struct defined above. */
+  function structType(): StructDef {
+    const nameToken = expectIdentifier()
+    const def = structs.get(nameToken.text)
+    if (!def) throw new CodeError(nameToken.line, 'codeError.unknownStruct', { name: nameToken.text })
+    return def
+  }
 
   function parseParams(): Param[] {
     expect('(')
@@ -358,6 +455,7 @@ export function parse(source: string): Program {
     while (!is(')')) {
       if (params.length > 0) expect(',')
       const typeToken = peek()
+      if (is('struct')) throw structError(typeToken.line, 'construct.structParam', 'unsupported.structParam')
       rejectUnsupportedKeyword(typeToken)
       if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
       const type = advance().text as NumType
@@ -422,6 +520,10 @@ export function parse(source: string): Program {
     }
     if (accept(';')) return { kind: 'block', line, body: [] }
     if (isType()) return parseDeclaration()
+    if (is('struct')) {
+      if (is('{', 2)) throw structError(line, 'construct.localStruct', 'unsupported.localStruct')
+      return parseStructDeclaration()
+    }
     if (is('void')) throw new CodeError(line, 'codeError.voidVariable')
 
     if (accept('if')) {
@@ -563,6 +665,43 @@ export function parse(source: string): Program {
     return { kind: 'declare', line: typeToken.line, type, declarators }
   }
 
+  /** `struct Point p;`, `struct Point p = {1, 2};` or `struct Point q = p;` — including the final ";". */
+  function parseStructDeclaration(): Stmt {
+    const line = advance().line // struct
+    const def = structType()
+    const declarators: StructDeclarator[] = []
+
+    do {
+      if (is('*')) throw structError(peek().line, 'construct.structPointer', 'unsupported.structPointer')
+      const nameToken = expectIdentifier()
+      if (is('(')) throw new CodeError(nameToken.line, 'codeError.nestedFunction', { name: nameToken.text })
+      if (is('[')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
+      const declarator: StructDeclarator = { line: nameToken.line, name: nameToken.text, values: null, copyOf: null }
+      if (accept('=')) {
+        if (is('{')) declarator.values = parseStructInit()
+        else declarator.copyOf = parseExpression()
+      }
+      declarators.push(declarator)
+    } while (accept(','))
+
+    expect(';')
+    return { kind: 'declareStruct', line, structName: def.name, declarators }
+  }
+
+  /** `{1, 2}`: the fields' values in order. `{.x = 1}` names a field, which isn't supported. */
+  function parseStructInit(): Expr[] {
+    expect('{')
+    const values: Expr[] = []
+    while (!is('}')) {
+      if (values.length > 0) expect(',')
+      if (is('}')) break // trailing comma
+      if (is('.')) throw structError(peek().line, 'construct.designatedInit', 'unsupported.designatedInit')
+      values.push(parseExpression())
+    }
+    expect('}')
+    return values
+  }
+
   /** `{a, b, c}` */
   function parseInitList(): Expr[] {
     expect('{')
@@ -620,7 +759,7 @@ export function parse(source: string): Program {
     return { kind: 'expr', line, expr: parseExpression() }
   }
 
-  /** `x`, `arr[i]`, `grid[i][j]`, `*p` or `(*p)` on the left of an assignment. */
+  /** `x`, `arr[i]`, `grid[i][j]`, `*p`, `(*p)` or `p.x` on the left of an assignment. */
   function parseTarget(): Target {
     if (is('(') && is('*', 1)) {
       advance()
@@ -635,8 +774,18 @@ export function parse(source: string): Program {
       return target
     }
     const nameToken = expectIdentifier()
+    if (is('.')) return parseField(nameToken)
     if (!is('[')) return { kind: 'var', line: nameToken.line, name: nameToken.text }
     return parseIndexed(nameToken)
+  }
+
+  /** The `.x` after a struct variable's name. A field is an int, float or char, so nothing more can follow. */
+  function parseField(nameToken: Token): Extract<Expr, { kind: 'field' }> {
+    advance() // .
+    const field = expectIdentifier().text
+    if (is('.')) throw structError(peek().line, 'construct.nestedStruct', 'unsupported.nestedStruct')
+    if (is('[')) throw new CodeError(peek().line, 'codeError.notArray', { name: `${nameToken.text}.${field}` })
+    return { kind: 'field', line: nameToken.line, name: nameToken.text, field }
   }
 
   /** `*p`, where p is a pointer's name. Anything else after the `*`, like `*(p + 1)`, is pointer arithmetic. */
@@ -654,10 +803,14 @@ export function parse(source: string): Program {
     expect('[')
     const index = parseExpression()
     expect(']')
-    if (!accept('[')) return { kind: 'index', line: nameToken.line, name: nameToken.text, index }
+    if (!accept('[')) {
+      if (is('.')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
+      return { kind: 'index', line: nameToken.line, name: nameToken.text, index }
+    }
     const col = parseExpression()
     expect(']')
     if (is('[')) throw tooManyDimensionsError(peek().line)
+    if (is('.')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
     return { kind: 'cell', line: nameToken.line, name: nameToken.text, row: index, col }
   }
 
@@ -805,6 +958,7 @@ export function parse(source: string): Program {
     if (peek().kind !== 'identifier' || is('(', 1)) throw new CodeError(amp.line, 'codeError.addressOfValue')
     const nameToken = advance()
     if (is('[')) throw pointerError(amp.line, 'unsupported.pointerToArray')
+    if (is('.')) throw pointerError(amp.line, 'unsupported.pointerToField')
     return { kind: 'address', line: amp.line, name: nameToken.text }
   }
 
@@ -834,9 +988,12 @@ export function parse(source: string): Program {
           args.push(parseExpression())
         }
         expect(')')
+        // `make().x` would need a function that returns a struct.
+        if (is('.')) throw structError(token.line, 'construct.structReturn', 'unsupported.structReturn')
         return { kind: 'call', line: token.line, name: token.text, args }
       }
       if (is('[')) return parseIndexed(token)
+      if (is('.')) return parseField(token)
       if (token.text === 'NULL') return { kind: 'null', line: token.line }
       return { kind: 'var', line: token.line, name: token.text }
     }

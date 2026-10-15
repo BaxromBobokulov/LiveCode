@@ -38,6 +38,12 @@ export type StepFact =
   | { kind: 'derefRead'; pointer: string; target: string; value: string }
   /** `*p = ...` on this line changes `target`, the variable p points to. */
   | { kind: 'derefWrite'; pointer: string; target: string }
+  /** `struct Point p;` — `fields` are the field names, which have no values yet. */
+  | { kind: 'declareStruct'; name: string; type: string; fields: Phrase[] }
+  /** `struct Point p = {1, 2};` — `values` are "x = 1", "y = 2"; `zeroed` when some fields were left out of the { } and got 0. */
+  | { kind: 'declareStructValues'; name: string; type: string; values: Phrase[]; zeroed: boolean }
+  /** `struct Point q = p;` (`isDeclaration`) or `q = p;`: every field of `source` copied into `name`. */
+  | { kind: 'copyStruct'; name: string; type: string; source: string; values: Phrase[]; isDeclaration: boolean }
   | { kind: 'assign'; target: string; value: Shown }
   | { kind: 'update'; target: string; op: '++' | '--'; result: string }
   | { kind: 'expr'; value: Shown }
@@ -161,6 +167,22 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'readCell':
       return [{ key: 'explain.readCell', values: { target: fact.target, value: fact.value } }]
+
+    case 'declareStruct':
+      return [{ key: 'explain.declareStruct', values: { name: fact.name, type: fact.type, fields: fact.fields } }]
+
+    case 'declareStructValues': {
+      const sentence: Phrase = { key: 'explain.declareStructValues', values: { name: fact.name, type: fact.type, values: fact.values } }
+      return fact.zeroed ? [sentence, { key: 'explain.structZeroed' }] : [sentence]
+    }
+
+    case 'copyStruct': {
+      const values = { name: fact.name, type: fact.type, source: fact.source, values: fact.values }
+      return [
+        { key: fact.isDeclaration ? 'explain.declareStructCopy' : 'explain.structCopy', values },
+        { key: 'explain.structCopySeparate', values },
+      ]
+    }
 
     case 'declarePointer':
       if (fact.points === null) return [{ key: 'explain.declarePointer', values: { name: fact.name } }]

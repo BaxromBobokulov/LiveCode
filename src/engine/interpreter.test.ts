@@ -920,4 +920,206 @@ describe('runUserCode', () => {
       }
     })
   })
+
+  describe('structs', () => {
+    const point = ['struct Point {', '    int x;', '    int y;', '};']
+
+    /** The error a program stops with, as { line, key }. */
+    const errorOf = (...code: string[]) => {
+      const result = runUserCode(lines(...code))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return { line: result.error.line, key: result.error.text.key }
+    }
+
+    it('declares struct variables and reads and writes their fields', () => {
+      const steps = stepsOf(
+        lines(
+          ...point,
+          'int main() {',
+          '    struct Point p;',
+          '    struct Point q = {1, 2};',
+          '    p.x = 5;',
+          '    p.y = q.y + 1;',
+          '    p.x++;',
+          '    printf("%d %d\\n", p.x, p.y);',
+          '    return 0;',
+          '}',
+        ),
+      )
+
+      // The definition is not a step: it only describes the type.
+      expect(steps.map((s) => s.line)).toEqual([6, 7, 8, 9, 10, 11, 12])
+      expect(steps[0].variables).toEqual([
+        { name: 'p', value: '{x = ?, y = ?}', structType: 'Point', fields: [{ name: 'x', value: '?' }, { name: 'y', value: '?' }] },
+      ])
+      expect(steps[0].changed).toEqual(['p'])
+      expect(english(steps[0])).toBe('Create p, a struct Point with the fields x and y. They have no values yet.')
+      expect(english(steps[1])).toBe('Create q, a struct Point, and fill in its fields in order: x = 1 and y = 2.')
+
+      // Writing one field highlights just that field: "p.x".
+      expect(steps[2].changed).toEqual(['p.x'])
+      expect(english(steps[2])).toBe('Set p.x to 5.')
+      expect(english(steps[3])).toBe('Set p.y to q.y + 1: 2 + 1 = 3.')
+      expect(english(steps[4])).toBe('Increase p.x by 1. p.x is now 6.')
+      expect(steps[4].variables[0].fields).toEqual([{ name: 'x', value: '6' }, { name: 'y', value: '3' }])
+      expect(steps.at(-1)?.output).toBe('6 3\n')
+    })
+
+    it('converts initializer values to the field types and fills missing fields with 0', () => {
+      const steps = stepsOf(
+        lines('struct Item {', '    int id;', '    float price;', '    char grade;', '};', 'int main() {', '    struct Item it = {7.9};', '    return 0;', '}'),
+      )
+      expect(steps[0].variables[0].fields).toEqual([
+        { name: 'id', value: '7' },
+        { name: 'price', value: '0.0' },
+        { name: 'grade', value: "'\\0'" },
+      ])
+      expect(english(steps[0])).toBe(
+        'Create it, a struct Item, and fill in its fields in order: id = 7, price = 0.0 and grade = \'\\0\'. Fields left out of the { } start at 0.',
+      )
+    })
+
+    it('copies structs field by field, so the copies stay separate', () => {
+      const steps = stepsOf(
+        lines(
+          ...point,
+          'int main() {',
+          '    struct Point a = {1, 2};',
+          '    struct Point b;',
+          '    b = a;',
+          '    struct Point c = a;',
+          '    b.x = 9;',
+          '    c.y = 8;',
+          '    printf("%d %d %d\\n", a.x, b.x, c.x);',
+          '    printf("%d %d %d\\n", a.y, b.y, c.y);',
+          '    return 0;',
+          '}',
+        ),
+      )
+
+      const copy = steps.find((s) => s.line === 8)!
+      expect(copy.changed).toEqual(['b'])
+      expect(english(copy)).toBe("Copy every field of a into b: x = 1 and y = 2. b has its own fields, so changing b later doesn't change a.")
+      expect(english(steps.find((s) => s.line === 9)!)).toBe(
+        "Create c, a struct Point, as a copy of a: x = 1 and y = 2. c has its own fields, so changing c later doesn't change a.",
+      )
+      expect(steps.at(-1)?.output).toBe('1 9 1\n2 2 8\n')
+    })
+
+    it('reads input into a field with scanf', () => {
+      const result = runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    scanf("%d", &p.x);', '    return 0;', '}'), '42')
+      if ('error' in result) throw new Error('Unexpected error')
+      expect(result.steps[1]).toMatchObject({ changed: ['p.x'] })
+      expect(result.steps[1].variables[0].fields?.[0]).toEqual({ name: 'x', value: '42' })
+    })
+
+    it('gives a struct one address in a program with pointers', () => {
+      const steps = stepsOf(lines(...point, 'int main() {', '    int n = 1;', '    struct Point p = {1, 2};', '    int *q = &n;', '    return 0;', '}'))
+      expect(steps[2].variables.map((v) => [v.name, v.address])).toEqual([
+        ['n', '0x100'],
+        ['p', '0x104'],
+        ['q', '0x108'],
+      ])
+    })
+
+    it('reports an unknown field and an undefined struct type as code errors', () => {
+      const unknownField = runUserCode(lines(...point, 'int main() {', '    struct Point p = {1, 2};', '    p.z = 3;', '    return 0;', '}'))
+      expect('error' in unknownField && unknownField.error).toBeInstanceOf(CodeError)
+      expect('error' in unknownField && unknownField.error.line).toBe(7)
+      expect('error' in unknownField && formatPhrase(translations.en, unknownField.error.text)).toBe(
+        'struct Point has no field named z. Its fields are x and y.',
+      )
+
+      const undefinedType = runUserCode(lines('int main() {', '    struct Pt p;', '    return 0;', '}'))
+      expect('error' in undefinedType && undefinedType.error).toBeInstanceOf(CodeError)
+      expect('error' in undefinedType && undefinedType.error.line).toBe(2)
+      expect('error' in undefinedType && formatPhrase(translations.en, undefinedType.error.text)).toBe(
+        'struct Pt is not defined. Define it above the code that uses it, e.g. struct Pt { int x; int y; };',
+      )
+
+      // As in C, a struct can only be used below its definition.
+      expect(errorOf('int main() {', '    struct Point p;', '    return 0;', '}', ...point)).toEqual({ line: 2, key: 'codeError.unknownStruct' })
+    })
+
+    it('reports other struct mistakes as code errors', () => {
+      const main = (...body: string[]) => [...point, 'int main() {', ...body, '    return 0;', '}']
+      const cases: [string[], number, string][] = [
+        [main('    struct Point p;', '    int a = p.x;'), 7, 'codeError.noValue'],
+        [main('    struct Point p = {1, 2};', '    printf("%d", p);'), 7, 'codeError.isStruct'],
+        [main('    struct Point p = {1, 2};', '    int a = p + 1;'), 7, 'codeError.isStruct'],
+        [main('    struct Point p = {1, 2};', '    p++;'), 7, 'codeError.isStruct'],
+        [main('    struct Point p;', '    p = 5;'), 7, 'codeError.structAssign'],
+        [main('    struct Point p = {1, 2, 3};'), 6, 'codeError.tooManyFieldValues'],
+        [main('    int n = 1;', '    n.x = 2;'), 7, 'codeError.notStruct'],
+        [main('    struct Point p;', '    struct Point p;'), 7, 'codeError.alreadyDeclared'],
+        [['struct A {', '    int x;', '};', 'struct B {', '    int x;', '};', 'int main() {', '    struct A a;', '    struct B b = a;', '    return 0;', '}'], 9, 'codeError.structTypeMismatch'],
+        [['struct P {', '    int x;', '    int x;', '};', 'int main() {', '    return 0;', '}'], 3, 'codeError.fieldTwice'],
+        [['struct P {', '    int x = 0;', '};', 'int main() {', '    return 0;', '}'], 2, 'codeError.fieldDefault'],
+        [['struct P {', '};', 'int main() {', '    return 0;', '}'], 2, 'codeError.emptyStruct'],
+        [['struct P {', '    int x;', '}', 'int main() {', '    return 0;', '}'], 3, 'codeError.expected'],
+        [[...point, ...point, 'int main() {', '    return 0;', '}'], 5, 'codeError.structDefinedTwice'],
+      ]
+      for (const [code, line, key] of cases) {
+        expect(errorOf(...code)).toEqual({ line, key })
+      }
+    })
+
+    it('rejects struct features outside the subset as not supported', () => {
+      const main = (...body: string[]) => [...point, 'int main() {', ...body, '    return 0;', '}']
+      const cases: [string[], string][] = [
+        [[...point, 'void show(struct Point p) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.structParam'],
+        [[...point, 'struct Point make() {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.structReturn'],
+        [main('    struct Point *p;'), 'unsupported.structPointer'],
+        [main('    struct Point p;', '    int *q = &p;'), 'unsupported.structPointer'],
+        [main('    struct Point p;', '    int *q = &p.x;'), 'unsupported.pointerToField'],
+        [main('    struct Point p;', '    p->x = 1;'), 'unsupported.arrow'],
+        [main('    struct Point pts[3];'), 'unsupported.structArray'],
+        [main('    int a[2];', '    a[0].x = 1;'), 'unsupported.structArray'],
+        [main('    struct Point p = {.x = 1};'), 'unsupported.designatedInit'],
+        [main('    struct Point p;', '    p.x.y = 1;'), 'unsupported.nestedStruct'],
+        [['struct A {', '    int x;', '};', 'struct B {', '    struct A a;', '};', 'int main() {', '    return 0;', '}'], 'unsupported.nestedStruct'],
+        [['struct A {', '    int marks[3];', '};', 'int main() {', '    return 0;', '}'], 'unsupported.arrayField'],
+        [['struct A {', '    int *p;', '};', 'int main() {', '    return 0;', '}'], 'unsupported.pointerField'],
+        [['int main() {', '    struct A {', '        int x;', '    };', '    return 0;', '}'], 'unsupported.localStruct'],
+        [[...point, 'struct Point origin;', 'int main() {', '    return 0;', '}'], 'unsupported.globalVariable'],
+      ]
+      for (const [code, key] of cases) {
+        const result = runUserCode(lines(...code))
+        expect('error' in result && result.error).toBeInstanceOf(UnsupportedConstructError)
+        expect('error' in result && result.error.text.key).toBe(key)
+      }
+    })
+
+    it('explains struct steps and errors in every language', () => {
+      const program = lines(
+        ...point,
+        'int main() {',
+        '    struct Point a;',
+        '    struct Point b = {1};',
+        '    a = b;',
+        '    struct Point c = a;',
+        '    a.x = c.y + 1;',
+        '    return 0;',
+        '}',
+      )
+      const errors = [
+        runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    p.z = 1;', '    return 0;', '}')),
+        runUserCode(lines('int main() {', '    struct Pt p;', '    return 0;', '}')),
+        runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    p = 5;', '    return 0;', '}')),
+        runUserCode(lines(...point, 'int main() {', '    struct Point *p;', '    return 0;', '}')),
+      ].flatMap((result) => ('error' in result ? [result.error] : []))
+      expect(errors).toHaveLength(4)
+
+      const phrases = [
+        ...stepsOf(program).flatMap((step) => step.explanation),
+        ...errors.map((error) => error.text),
+        ...errors.flatMap((error) => (error instanceof UnsupportedConstructError ? [error.construct] : [])),
+      ]
+      for (const strings of Object.values(translations)) {
+        for (const phrase of phrases) {
+          expect(formatPhrase(strings, phrase)).not.toMatch(/\{\w+\}|undefined/)
+        }
+      }
+    })
+  })
 })

@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { variableKey, type Variable } from '../../engine/types'
+import { fieldKey, variableKey, type Variable } from '../../engine/types'
 import { useTranslation } from '../../i18n/useTranslation'
 
 type VariablesPanelProps = {
@@ -102,6 +102,65 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
           const valueClass = 'origin-left font-mono text-body-md leading-5 text-text'
           const captionClass = `font-mono text-caption ${isChanged ? 'text-textMutedOnTint' : 'text-textMuted'}`
           const target = variable.pointsTo ? variableAt(variables, variable.pointsTo) : undefined
+
+          // A value that changed on this step pops in. A new key each step remounts it, so a new step
+          // replaces an animation that is still running.
+          const showValue = (value: string, popIn: boolean, className = valueClass) =>
+            popIn && !reduceMotion ? (
+              <motion.div
+                key={stepKey}
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className={className}
+              >
+                {value}
+              </motion.div>
+            ) : (
+              <div className={className}>{value}</div>
+            )
+
+          if (variable.fields) {
+            // A struct is one box holding its fields as labelled rows (name on the left, value on the
+            // right), so it reads as one variable made of named parts — not as an array's row of cells.
+            // When only one field changed, the box gets the accent border and just that row is tinted.
+            const fieldChanged = variable.fields.some((field) => changed.includes(fieldKey(variable, field.name)))
+            return (
+              <div
+                key={key}
+                ref={(element) => {
+                  if (element) boxRefs.current.set(key, element)
+                  else boxRefs.current.delete(key)
+                }}
+                className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 transition-colors duration-200 motion-reduce:transition-none ${
+                  isChanged ? 'border-accent bg-accentTint' : fieldChanged ? 'border-accent bg-panel' : 'border-border bg-panel'
+                }`}
+              >
+                <div className={`flex justify-between gap-2 ${captionClass}`}>
+                  <span>
+                    {label(variable)} : struct {variable.structType}
+                  </span>
+                  {variable.address && <span>{variable.address}</span>}
+                </div>
+                <dl className="mt-1.5 divide-y divide-border rounded-control border border-border">
+                  {variable.fields.map((field) => {
+                    const isFieldChanged = changed.includes(fieldKey(variable, field.name))
+                    const onTint = isChanged || isFieldChanged
+                    return (
+                      <div
+                        key={field.name}
+                        className={`flex items-baseline justify-between gap-3 px-2 py-1 ${isFieldChanged ? 'bg-accentTint' : ''}`}
+                      >
+                        <dt className={`font-mono text-caption ${onTint ? 'text-textMutedOnTint' : 'text-textMuted'}`}>{field.name}</dt>
+                        <dd>{showValue(field.value, onTint, 'origin-right font-mono text-body-md leading-5 text-text')}</dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+              </div>
+            )
+          }
+
           return (
             <div
               key={key}
@@ -118,20 +177,7 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
                 <span>{label(variable)}</span>
                 {variable.address && <span>{variable.address}</span>}
               </div>
-              {isChanged && !reduceMotion ? (
-                // A new key each step remounts the value, so a new step replaces an animation that is still running
-                <motion.div
-                  key={stepKey}
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className={valueClass}
-                >
-                  {variable.value}
-                </motion.div>
-              ) : (
-                <div className={valueClass}>{variable.value}</div>
-              )}
+              {showValue(variable.value, isChanged)}
               {variable.isPointer && (
                 <div className={captionClass}>
                   {target ? (

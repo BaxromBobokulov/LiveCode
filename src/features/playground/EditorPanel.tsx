@@ -1,5 +1,5 @@
 import { acceptCompletion, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import CodeMirror, { Prec, keymap, lineNumbers } from '@uiw/react-codemirror'
 import { useId, useMemo, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
@@ -54,7 +54,8 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   // While the error box is showing, the editor points at the same line, in the error color.
   const highlightLine = runError ? runError.line : step.line
   const highlightTone = runError ? 'error' : 'current'
-  // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) is added here explicitly.
+  // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) and undo/redo
+  // (history + Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are added here explicitly.
   // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,
   // the same order CodeMirror's own basicSetup uses. autocompletion already binds Enter/Esc/arrows
   // for the dropdown; Tab is added so it accepts a suggestion too. It needs Prec.high to run before
@@ -62,10 +63,11 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   const extensions = useMemo(
     () => [
       lineNumbers(),
+      history(),
       closeBrackets(),
       cAutocomplete,
       Prec.high(keymap.of([{ key: 'Tab', run: acceptCompletion }])),
-      keymap.of([...closeBracketsKeymap, ...defaultKeymap]),
+      keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
       cLanguage,
       execLineHighlight(highlightLine, highlightTone),
     ],
