@@ -7,6 +7,7 @@ import Button from '../../components/Button'
 import Chip from '../../components/Chip'
 import MaximizeButton from '../../components/MaximizeButton'
 import Select from '../../components/Select'
+import { getProblem } from '../../data/problems'
 import { usesScanf } from '../../engine/interpreter'
 import { useTranslation } from '../../i18n/useTranslation'
 import { useCurrentExample, usePlaygroundStore, useStaleness } from '../../store/playgroundStore'
@@ -47,7 +48,8 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   const inputCollapsed = usePlaygroundStore((state) => state.inputCollapsed)
   const expandInput = usePlaygroundStore((state) => state.expandInput)
   const runError = usePlaygroundStore((state) => state.runError)
-  const { t, exampleText } = useTranslation()
+  const problemId = usePlaygroundStore((state) => state.problemId)
+  const { t, exampleText, locale } = useTranslation()
   const inputId = useId()
 
   const { traceStale, errorStale } = useStaleness()
@@ -58,6 +60,9 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
   const highlightLine = runError ? runError.line : step.line
   const highlightTone = runError ? 'error' : 'current'
   const highlightStale = runError ? errorStale : traceStale
+  // An open problem keeps its own title, also once Run has traced the student's code.
+  const problem = problemId === null ? undefined : getProblem(problemId)
+  const title = problem ? problem.title[locale] : exampleText(example, 'title')
   // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) and undo/redo
   // (history + Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are added here explicitly.
   // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,
@@ -73,7 +78,8 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
       Prec.high(keymap.of([{ key: 'Tab', run: acceptCompletion }])),
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
       cLanguage,
-      execLineHighlight(highlightLine, highlightTone, highlightStale),
+      // Line 0: nothing has run yet (a problem before its first Run), so no line is highlighted.
+      highlightLine > 0 ? execLineHighlight(highlightLine, highlightTone, highlightStale) : [],
     ],
     [highlightLine, highlightTone, highlightStale],
   )
@@ -82,7 +88,7 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
     <section className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-panel ${className}`}>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4.5 py-3.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <h2 className="truncate text-body-md font-semibold">{exampleText(example, 'title')}</h2>
+          <h2 className="truncate text-body-md font-semibold">{title}</h2>
           <Chip>{step.scope}</Chip>
         </div>
         <div className="flex flex-wrap items-center gap-2">

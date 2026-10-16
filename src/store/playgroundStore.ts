@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
+import { getProblem } from '../data/problems'
+import type { Problem } from '../data/problems/types'
 import { UnsupportedConstructError, isMissingInput, type RunError } from '../engine/errors'
 import { runUserCode, usesScanf } from '../engine/interpreter'
+import { checkSolution, type CheckResult } from '../features/problems/checkSolution'
 import { track } from '../lib/analytics'
 import type { ExampleProgram } from '../engine/types'
 
-export type TabId = 'playground' | 'examples' | 'learn'
+export type TabId = 'playground' | 'examples' | 'problems' | 'learn'
 
 type PlaygroundState = {
   activeTab: TabId
@@ -26,10 +29,20 @@ type PlaygroundState = {
   inputMissing: boolean
   /** The Input field is folded into a one-line summary of its values, after a Run that used them. */
   inputCollapsed: boolean
+  /** The problem open in the Playground (its statement and Check show above the editor), or null for an example. */
+  problemId: string | null
+  /** What the last Check found. Kept after an edit, so the student can compare while fixing their code. */
+  checkResult: CheckResult | null
+  /** The code the last Check ran, so the result can say when the editor no longer holds it. */
+  checkedCode: string | null
 
   setTab: (tab: TabId) => void
   /** Load an example at its first step and switch to the Playground. */
   loadExample: (id: string) => void
+  /** Open a problem in the Playground: its starter code (or an empty editor), and no trace until a Run. */
+  loadProblem: (id: string) => void
+  /** Run the editor's code against the open problem's test cases. Doesn't touch the trace. */
+  check: () => void
   setCode: (code: string) => void
   setInput: (input: string) => void
   /** Open the collapsed Input summary back into the editable field. */
@@ -44,6 +57,32 @@ type PlaygroundState = {
   /** Trace the code in the editor and play it from the first step. */
   run: () => void
   toggleAutoplay: () => void
+}
+
+/**
+ * What the Execution panel shows for a problem before its first Run: one empty step over the starter code,
+ * saying to press Run. Line 0 means no line is highlighted.
+ */
+function problemStartProgram(problem: Problem): ExampleProgram {
+  const code = problem.starterCode ?? ['']
+  return {
+    id: `problem-${problem.id}`,
+    title: problem.title.en,
+    tag: problem.topic,
+    code,
+    steps: [
+      {
+        line: 0,
+        scope: 'main()',
+        variables: [],
+        changed: [],
+        array: null,
+        loop: null,
+        output: '',
+        explanation: [{ key: 'step.problemStart' }],
+      },
+    ],
+  }
 }
 
 /** The program whose steps the Playground is showing. */
@@ -81,6 +120,9 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     input: '',
     inputMissing: false,
     inputCollapsed: false,
+    problemId: null,
+    checkResult: null,
+    checkedCode: null,
 
     // Leaving the Playground pauses auto play so it doesn't run unseen.
     setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
@@ -97,7 +139,39 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         stepIndex: 0,
         isPlaying: false,
         activeTab: 'playground',
+        problemId: null,
+        checkResult: null,
+        checkedCode: null,
       }),
+
+    loadProblem: (id) => {
+      const problem = getProblem(id)
+      if (!problem) return
+      const program = problemStartProgram(problem)
+      set({
+        problemId: id,
+        code: program.code.join('\n'),
+        userProgram: program,
+        runError: null,
+        failedCode: null,
+        input: '',
+        inputMissing: false,
+        inputCollapsed: false,
+        stepIndex: 0,
+        isPlaying: false,
+        activeTab: 'playground',
+        checkResult: null,
+        checkedCode: null,
+      })
+    },
+
+    check: () => {
+      const { problemId, code } = get()
+      const problem = problemId === null ? undefined : getProblem(problemId)
+      if (!problem) return
+      // No analytics here: a student's attempts and results are never sent anywhere.
+      set({ checkResult: checkSolution(problem, code), checkedCode: code })
+    },
 
     // An edit can leave the trace on screen out of date, so auto play stops.
     setCode: (code) => {
@@ -134,11 +208,11 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       }),
 
     run: () => {
-      const { code, exampleId, input } = get()
+      const { code, exampleId, input, problemId } = get()
       const example = getExample(exampleId)
 
-      // Unchanged example code plays its hand-authored trace.
-      if (code === example.code.join('\n')) {
+      // Unchanged example code plays its hand-authored trace. A problem always traces the student's code.
+      if (problemId === null && code === example.code.join('\n')) {
         track('code_run', { source: 'example' })
         set({ userProgram: null, runError: null, failedCode: null, inputMissing: false, stepIndex: 0, isPlaying: true })
         return

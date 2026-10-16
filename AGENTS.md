@@ -19,7 +19,7 @@ CodeVision helps beginner programmers understand how code executes. A user picks
 - `printf` output accumulates in a console panel
 - each step has a short plain-language explanation
 
-Three sections: **Playground** (the two-panel workspace), **Examples** (ready-made programs: loops, arrays, conditions, functions), **Learn** (a short explanation of how the tool works).
+Four sections: **Playground** (the two-panel workspace), **Examples** (ready-made programs: loops, arrays, conditions, functions — study a correct solution), **Problems** / *Masalalar* (tasks the student solves by writing their own program, then checks — see "Problems (Masalalar)" below), **Learn** (a short explanation of how the tool works).
 
 This is a learning product. Favor clarity in the UI and in the code over cleverness.
 
@@ -88,9 +88,11 @@ src/
   features/
     playground/
     examples/
+    problems/
     learn/
   data/
     examples/
+    problems/
   engine/
   store/
   lib/
@@ -122,6 +124,29 @@ Each example program lives in its own file and exports one `ExampleProgram`:
 
 Generate `steps` with a small JS loop that mirrors the C program's own logic (see the pattern in `sum.ts` / `max.ts` / `factorial.ts`) — never hand-write the trace as a flat literal array. These stay the curated, always-correct walkthroughs; they are never routed through the interpreter below.
 
+### src/data/problems/
+
+Each problem lives in its own file and exports one `Problem` (type in `src/data/problems/types.ts`):
+
+```ts
+{ id, title, topic, difficulty, statement, starterCode?, testCases }
+```
+
+- `title` and `statement` are `LocalizedText` (`{ uz, en, ru }`), written in the problem's own file rather than in `translations.ts`: the statement is the problem's main teaching content, and keeping all three languages next to each other makes a new problem one self-contained file. A missing language is a type error.
+- `statement` formatting: a blank line (`
+
+`) starts a new paragraph, a single `
+` is a line break, and text in `` `backticks` `` is shown as code. End it with the expected output, so the student knows the exact format.
+- `topic` is one of `ProblemTopic` (`'conditions' | 'while' | 'for' | 'arrays' | 'functions'`); its label is `problems.topic.<topic>` in `translations.ts`. The Problems screen lists topics in the order of `problemTopics` in `index.ts` and hides a topic with no problems yet. Examples' single "Loops" tag is split into `while` and `for` here, so each loop kind gets its own practice.
+- `difficulty` is `'easy' | 'medium' | 'hard'`; problems within a topic are shown easiest first. `DifficultyBadge` shows it as a 1-, 2- or 3-bar meter (filled bars `accent`, empty ones `borderStrong`) before the word, deliberately unlike the topic `Chip` (tinted, mono) next to it: the level reads from the number of filled bars and the word, not from a color.
+- `starterCode` is one entry per line, like an example's `code`. Like example code it is not translated, so it holds no comments. Leave it out for an empty editor (used for medium problems, where the student writes the whole program).
+- `testCases` is a list of `{ input?, expectedOutput }`. `expectedOutput` is the exact Console output a correct solution prints, `
+`s included. `input` is what the program's `scanf` calls read, written exactly like the Playground's Input field (values separated by spaces, in run order). Leave `input` out for a problem that doesn't use `scanf` — that is the shorthand for "no input", not a different kind of test case.
+- **Every problem in the set reads its value(s) with `scanf`** — there are no fixed-value problems (the four original ones, Absolute Value, Letter Grade, Countdown and Sum of Digits, were converted too). `checkSolution.test.ts` checks this for every problem: printing any one test case's expected output as a fixed text must fail another case. Starter code, where there is one, already contains the variable and its `scanf` line.
+- A `scanf` problem has **at least two test cases with different inputs**, chosen so an answer that only works for one of them (a hardcoded `printf`, or a branch that only goes one way) fails a case. Say in the statement that Check runs several inputs, and show one example input with its output.
+
+Add a new problem by creating its file and listing it in `problems` in `index.ts`. Add a correct solution for it to `solutions` in `src/features/problems/checkSolution.test.ts` — the test fails for a problem without one, which catches a wrong `expectedOutput`.
+
 ### src/engine/
 
 Holds:
@@ -138,6 +163,8 @@ One Zustand store, `playgroundStore`, holding: `activeTab`, `exampleId`, `stepIn
 **Reset's scope:** back to the first step, Auto Play stopped, the error (error box and red line) cleared, Input emptied and opened. It never touches the code in the editor — the student's edits stay exactly as typed, so pressing Run again on the same broken code shows the same error again.
 
 **Stale trace:** what the Execution panel and the line highlight show is "stale" when the editor's code is no longer the code it came from (`staleness()` in `playgroundStore`, derived, not stored). The trace is stale when the code differs from the shown program's code: after any edit (mid-step or not), and also after a failed Run, which keeps the previous trace. The error is stale when the code was edited after the Run that failed. Stale things are marked, never faded: the step highlight or red line goes to a faint gray bar, and the trace part of the panel or the error box gets a dashed `textMuted` outline (a graphic, checked at 3:1 or more on the panel in both themes), under a "The code was changed. Press Run again…" note with the same dashed border. Text keeps its own colors, so its contrast is unchanged — don't dim stale content with opacity, which drops text below 4.5:1, and while the trace is stale Previous / Next / Auto Play are disabled and an edit stops Auto Play. Only a Run makes a new trace; the highlight is never moved to follow edited lines. Undoing back to the exact traced code makes it current again, since it matches.
+
+**Problems in the store:** `problemId` is the problem open in the Playground (null while an example is loaded), `checkResult` what the last Check found, and `checkedCode` the code that Check ran. `loadProblem(id)` works like `loadExample`: it switches to the Playground with the problem's starter code, and sets `userProgram` to a one-step placeholder trace (line 0, so no line is highlighted, explaining "press Run or Check"). Loading an example closes the problem. While a problem is open, Run always traces the editor's code through `runUserCode` (never an example's hand-authored trace). `check()` doesn't touch the trace.
 
 Local component state is fine for anything that doesn't need to be shared (hover states, input focus, etc).
 
@@ -191,6 +218,20 @@ CodeVision runs arbitrary user-typed C code through its own in-browser interpret
 
 ---
 
+## Problems (Masalalar)
+
+The Problems tab (`src/features/problems/ProblemsScreen.tsx`) lists each topic with its problems as cards (title, difficulty badge, the statement's first paragraph). Clicking one calls `loadProblem` and opens it in the Playground, the same way Examples work, so there is one workspace and one editor. With a problem open, `PlaygroundScreen` shows `ProblemPanel` above the two panels: an "All problems" button back to the list, the title, difficulty and topic, the statement, and the **Check** (*Tekshirish*) button. Check is separate from Run: Run and the step controls trace the student's code as usual, so they can debug a failed Check.
+
+**Check** (`checkSolution` in `src/features/problems/checkSolution.ts`) runs the editor's code with `runUserCode(code, input)` once per test case — the same call and the same input format Run uses for the Input field, so there is no separate input path — and compares the last step's Console output with `expectedOutput`. Spaces at the end of a line and trailing blank lines are ignored (a beginner can't see them in the Console). The result box itself is a plain bordered panel; **only its summary line is tinted** — green (`success` border, `successTint`, a check mark) on a pass, red (`error`, `errorTint`, a cross) on a fail — so several failing cases don't read as a wall of red. A failed case is one compact line: "Your output: `4`  Expected output: `15`" with each output as inline code (a multi-line output keeps its line breaks), then the first line that differs in muted text. No output at all is said in plain muted words ("Nothing was printed"), never in a bordered box that could look like a field to fill in. A program that stops with an error shows the error and its line instead. A failed Check ends with a muted hint to press Run and step through.
+
+**One test case vs several:** with one test case the box shows that case's compact line directly. With several, the headline counts them ("2 of 3 tests passed." / "Correct! Your program passed all 3 tests.") and each case gets its own row, separated by thin `border` dividers on the plain panel: a check mark or cross, "Test 2: failed", and its input; a failed case's row adds its compact line underneath, indented past the icon, so the student sees which input broke their solution. Rows get no colored fill and no left-border accent (that is reserved for the current code line) — the icon and the words tell them apart. When every case stopped with the same error (e.g. a missing semicolon, which doesn't depend on the input), that error is shown once, like a single case.
+
+**"Run with this input":** a failed case that has a non-empty `input` gets a small link-style action at the end of its compact line — a play icon and the word "Run" (`button.run`) in `accentText`, with the full "Run with this input" (`check.runWithInput`) as its accessible name and tooltip; its touch area is 44px tall but overlaps the lines around it, so the row doesn't grow. It puts that input in the Input field and presses Run — `setInput(input)` followed by `PlaygroundScreen`'s own `handleRun`, the exact path a student typing the values and pressing Run takes (same trace, same missing-input handling, same folding of the Input field into its summary). Side by side, it then scrolls the editor and Execution panels into view, since they sit below the result box; stacked, `handleRun` already scrolls to the Execution panel. It is never shown on a passed case, on a case without input, or when the same error is shown once for all cases. After an edit, the result stays but gets the dashed stale outline and a "press Check again" note, like a stale trace. The pass/fail meaning is carried by the icon and the words, never by color alone.
+
+**No tracking:** problem attempts and results are never saved (not even to localStorage) or sent anywhere, and Check sends no analytics event. Feedback is instant and in the browser only.
+
+---
+
 ## UI Implementation Rules (VERY IMPORTANT)
 
 A reference design already exists (the approved CodeVision mockup). Match it **exactly**:
@@ -221,7 +262,7 @@ Do not approximate spacing, colors, or type scale — use the exact values above
 
 ## Styling Rules
 
-Use Tailwind utility classes strictly. This project is on Tailwind v4, which keeps its color tokens in CSS rather than a JS config — the palette above lives in `src/theme/colors.css` as named tokens (`accent`, `accentDark`, `accentTint`, `border`, `borderStrong`, `text`, `textMuted`, `textFaint`, `textMutedOnTint` (captions on an `accentTint` background, where `textMuted` falls below 4.5:1), `error`, `errorTint`; add `warning`, `success`, `info` and their tints there the same way when something first needs them) and are reference by name everywhere — never repeat a raw hex value in a component.
+Use Tailwind utility classes strictly. This project is on Tailwind v4, which keeps its color tokens in CSS rather than a JS config — the palette above lives in `src/theme/colors.css` as named tokens (`accent`, `accentDark`, `accentTint`, `border`, `borderStrong`, `text`, `textMuted`, `textFaint`, `textMutedOnTint` (captions on an `accentTint` background, where `textMuted` falls below 4.5:1), `error`, `errorTint`, `success`, `successTint`, `successText` (text and icons on `successTint`: the success green itself is only 2.34:1 there, so it is used for the border only); add `warning`, `info` and their tints there the same way when something first needs them) and are reference by name everywhere — never repeat a raw hex value in a component.
 
 ### Style Exception Rules
 

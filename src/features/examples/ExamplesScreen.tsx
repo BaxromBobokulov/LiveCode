@@ -12,12 +12,14 @@ const previewLineCount = 4
 function ExamplesScreen() {
   const exampleId = usePlaygroundStore((state) => state.exampleId)
   const loadExample = usePlaygroundStore((state) => state.loadExample)
+  const problemId = usePlaygroundStore((state) => state.problemId)
   const { t, exampleText } = useTranslation()
 
   return (
     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {examples.map((example) => {
-        const isLoaded = example.id === exampleId
+        // While a problem is open, the Playground holds its code, not this example's.
+        const isLoaded = problemId === null && example.id === exampleId
         // Preview the first lines of main()'s body: every example starts with the same
         // #include / blank / main() lines, so those would make all three cards look alike.
         const preview = example.code

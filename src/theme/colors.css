@@ -36,6 +36,11 @@
   /* Semantic — errorTint mixes ~8.5% error into white, the same ratio as accentTint */
   --color-error: #ef4444;
   --color-errorTint: #feefef;
+  /* successTint mixes 8.5% success into white, like errorTint. The success green itself is only 2.34:1
+     there, so it is the border only; text and the check mark use successText (5.06:1 on successTint). */
+  --color-success: #10b981;
+  --color-successTint: #ebf9f4;
+  --color-successText: #047857;
 
   /* Neutral fills measured from the Playground reference */
   --color-surface: #fafbfc; /* explanation box, console */
@@ -74,6 +79,10 @@
 
   --color-error: #f87171;
   --color-errorTint: #2c1719;
+
+  --color-success: #34d399;
+  --color-successTint: #1a302e; /* 12% success into the panel */
+  --color-successText: #34d399; /* 7.25:1 on successTint */
 
   --color-surface: #1d2127;
   --color-subtle: #090b0e;

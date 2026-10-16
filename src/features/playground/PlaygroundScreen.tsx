@@ -3,9 +3,11 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, ty
 import { flushSync } from 'react-dom'
 import { SPLIT_KEY_STEP, SPLIT_MAX, SPLIT_MIN } from '../../constants/layout'
 import { AUTOPLAY_DELAY_MS, RUN_SCROLL_DELAY_MS, RUN_SCROLL_DURATION_S } from '../../constants/playback'
+import { getProblem } from '../../data/problems'
 import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { useSettingsStore } from '../../store/settingsStore'
+import ProblemPanel from '../problems/ProblemPanel'
 import EditorPanel from './EditorPanel'
 import ExecutionPanel from './ExecutionPanel'
 
@@ -56,6 +58,9 @@ function PlaygroundScreen() {
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const next = usePlaygroundStore((state) => state.next)
   const run = usePlaygroundStore((state) => state.run)
+  const setInput = usePlaygroundStore((state) => state.setInput)
+  const problemId = usePlaygroundStore((state) => state.problemId)
+  const problem = problemId === null ? undefined : getProblem(problemId)
   const layoutRef = useRef<HTMLDivElement>(null)
   const executionRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -104,6 +109,20 @@ function PlaygroundScreen() {
     else cancelScroll.current = scrollToElement(panel)
   }
 
+  // "Run with this input" on a failed Check case: exactly as if the student typed the case's input into
+  // the Input field and pressed Run.
+  function handleRunWithInput(value: string) {
+    setInput(value)
+    handleRun()
+    // handleRun already scrolled if it had to: to the Input field (values missing) or, stacked, to the
+    // Execution panel. Side by side, the panels sit under the problem's result box, so bring them into view.
+    const layout = layoutRef.current
+    if (!layout || usePlaygroundStore.getState().inputMissing || getComputedStyle(layout).flexDirection === 'column') return
+    cancelScroll.current?.()
+    if (reduceMotion) layout.scrollIntoView({ block: 'start' })
+    else cancelScroll.current = scrollToElement(layout)
+  }
+
   function toggleMaximize(panel: PanelId) {
     setMaximized((current) => (current === panel ? null : panel))
   }
@@ -142,7 +161,7 @@ function PlaygroundScreen() {
   const editorSplitClass =
     'min-[1000px]:flex-none min-[1000px]:basis-[calc((100%_-_20px)_*_var(--editor-share))]'
 
-  return (
+  const panels = (
     <div
       ref={layoutRef}
       style={{ '--editor-share': splitRatio } as CSSProperties}
@@ -183,6 +202,15 @@ function PlaygroundScreen() {
         onToggleMaximize={() => toggleMaximize('execution')}
         className={maximized === 'editor' ? 'hidden' : ''}
       />
+    </div>
+  )
+
+  // An open problem shows its statement and the Check button above the two panels.
+  if (!problem) return panels
+  return (
+    <div className="flex flex-col gap-5">
+      <ProblemPanel problem={problem} onRunWithInput={handleRunWithInput} />
+      {panels}
     </div>
   )
 }

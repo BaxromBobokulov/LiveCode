@@ -7,6 +7,7 @@ import ThemeToggle from './components/ThemeToggle'
 import ExamplesScreen from './features/examples/ExamplesScreen'
 import LearnScreen from './features/learn/LearnScreen'
 import PlaygroundScreen from './features/playground/PlaygroundScreen'
+import ProblemsScreen from './features/problems/ProblemsScreen'
 import { useTranslation } from './i18n/useTranslation'
 import { usePlaygroundStore, type TabId } from './store/playgroundStore'
 
@@ -18,6 +19,7 @@ function App() {
   const tabs: { id: TabId; label: string }[] = [
     { id: 'playground', label: t('nav.playground') },
     { id: 'examples', label: t('nav.examples') },
+    { id: 'problems', label: t('nav.problems') },
     { id: 'learn', label: t('nav.learn') },
   ]
 
@@ -45,6 +47,7 @@ function App() {
         <main className="py-6">
           {activeTab === 'playground' && <PlaygroundScreen />}
           {activeTab === 'examples' && <ExamplesScreen />}
+          {activeTab === 'problems' && <ProblemsScreen />}
           {activeTab === 'learn' && <LearnScreen />}
         </main>
       </div>

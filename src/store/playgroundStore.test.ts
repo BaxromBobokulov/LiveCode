@@ -111,3 +111,42 @@ describe('playgroundStore stale trace', () => {
     expect(staleness(store.getState()).traceStale).toBe(false)
   })
 })
+
+describe('playgroundStore problems', () => {
+  beforeEach(() => store.setState(store.getInitialState(), true))
+
+  it('opens a problem in the Playground with its starter code and no trace yet', () => {
+    store.getState().loadProblem('absoluteValue')
+    const state = store.getState()
+    expect(state.activeTab).toBe('playground')
+    expect(state.problemId).toBe('absoluteValue')
+    expect(state.code).toContain('scanf("%d", &n);')
+    expect(state.userProgram?.steps).toHaveLength(1)
+    expect(staleness(state).traceStale).toBe(false)
+  })
+
+  it('starts with an empty editor when the problem has no starter code', () => {
+    store.getState().loadProblem('digitSum')
+    expect(store.getState().code).toBe('')
+  })
+
+  it('checks the code without changing the trace, and Run still traces it', () => {
+    store.getState().loadProblem('absoluteValue')
+    store.getState().setCode(store.getState().code.replace('scanf("%d", &n);', 'scanf("%d", &n);\n    if (n < 0) n = -n;'))
+    store.getState().check()
+    expect(store.getState().checkResult?.passed).toBe(true)
+    expect(store.getState().userProgram?.steps).toHaveLength(1)
+
+    store.getState().setInput('-7')
+    store.getState().run()
+    expect(store.getState().userProgram!.steps.at(-1)!.output).toBe('7\n')
+  })
+
+  it('closes the problem when an example is loaded', () => {
+    store.getState().loadProblem('absoluteValue')
+    store.getState().check()
+    store.getState().loadExample('max')
+    expect(store.getState().problemId).toBeNull()
+    expect(store.getState().checkResult).toBeNull()
+  })
+})
