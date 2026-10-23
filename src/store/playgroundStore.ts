@@ -6,6 +6,7 @@ import { UnsupportedConstructError, isMissingInput, type RunError } from '../eng
 import { runUserCode, usesScanf } from '../engine/interpreter'
 import { checkSolution, type CheckResult } from '../features/problems/checkSolution'
 import { track } from '../lib/analytics'
+import { useBadgesStore, type BadgeId } from './badgesStore'
 import type { ExampleProgram } from '../engine/types'
 
 export type TabId = 'playground' | 'examples' | 'problems' | 'learn'
@@ -35,6 +36,8 @@ type PlaygroundState = {
   checkResult: CheckResult | null
   /** The code the last Check ran, so the result can say when the editor no longer holds it. */
   checkedCode: string | null
+  /** Badges the last Check unlocked, announced in its result box (usually none). */
+  newBadges: BadgeId[]
 
   setTab: (tab: TabId) => void
   /** Load an example at its first step and switch to the Playground. */
@@ -123,6 +126,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     problemId: null,
     checkResult: null,
     checkedCode: null,
+    newBadges: [],
 
     // Leaving the Playground pauses auto play so it doesn't run unseen.
     setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
@@ -142,6 +146,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         problemId: null,
         checkResult: null,
         checkedCode: null,
+        newBadges: [],
       }),
 
     loadProblem: (id) => {
@@ -162,6 +167,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         activeTab: 'playground',
         checkResult: null,
         checkedCode: null,
+        newBadges: [],
       })
     },
 
@@ -170,7 +176,10 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       const problem = problemId === null ? undefined : getProblem(problemId)
       if (!problem) return
       // No analytics here: a student's attempts and results are never sent anywhere.
-      set({ checkResult: checkSolution(problem, code), checkedCode: code })
+      // Badges are the one exception, kept in this browser's localStorage only (see badgesStore).
+      const checkResult = checkSolution(problem, code)
+      const newBadges = checkResult.passed ? useBadgesStore.getState().recordPass() : []
+      set({ checkResult, checkedCode: code, newBadges })
     },
 
     // An edit can leave the trace on screen out of date, so auto play stops.

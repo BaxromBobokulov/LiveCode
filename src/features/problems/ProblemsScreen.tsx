@@ -2,6 +2,7 @@ import { problemTopics, problems } from '../../data/problems'
 import type { Difficulty } from '../../data/problems/types'
 import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
+import { BadgeShelf } from './Badges'
 import DifficultyBadge from './DifficultyBadge'
 import StatementText from './StatementText'
 
@@ -16,6 +17,7 @@ function ProblemsScreen() {
   return (
     <div className="flex flex-col gap-7">
       <p className="text-body-md text-textMuted">{t('problems.intro')}</p>
+      <BadgeShelf />
 
       {problemTopics.map((topic) => {
         const topicProblems = problems

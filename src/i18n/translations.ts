@@ -447,6 +447,20 @@ const en = {
   'check.noOutput': 'Nothing was printed',
   'check.differentLine': 'Line {line} is different.',
   'check.stale': 'The code was changed after this check. Press Check again to test the new code.',
+  'problem.question': 'Have a question?',
+  'problem.askTelegram': 'Ask in the Telegram group',
+  'link.newTab': '(opens in a new tab)',
+
+  'badges.title': 'Badges',
+  'badges.deviceOnly': 'These badges are saved on this device only.',
+  'badges.unlocked': 'Unlocked',
+  'badges.locked': 'Not unlocked yet',
+  'badges.progress': '{count} of {goal} days',
+  'badges.new': 'New badge: {name}',
+  'badge.firstSolve.title': 'First correct solution',
+  'badge.firstSolve.description': 'Pass every test of any problem with Check.',
+  'badge.activeDays.title': '7 days of practice',
+  'badge.activeDays.description': 'Solve a problem correctly on 7 different days.',
 
   'learn.title': 'How CodeVision works',
   // In the two paragraphs below, the words printf, puts, scanf, rand and srand are shown in the code font.
@@ -908,6 +922,20 @@ const uz: Record<TranslationKey, string> = {
   'check.noOutput': 'Hech narsa chiqarilmadi',
   'check.differentLine': '{line}-qator farq qiladi.',
   'check.stale': "Bu tekshiruvdan keyin kod o'zgardi. Yangi kodni sinash uchun Tekshirishni yana bosing.",
+  'problem.question': 'Savolingiz bormi?',
+  'problem.askTelegram': 'Telegram guruhga yozing',
+  'link.newTab': '(yangi oynada ochiladi)',
+
+  'badges.title': 'Nishonlar',
+  'badges.deviceOnly': 'Bu nishonlar shu qurilmada saqlanadi.',
+  'badges.unlocked': "Qo'lga kiritildi",
+  'badges.locked': "Hali qo'lga kiritilmagan",
+  'badges.progress': '{goal} kundan {count} kun',
+  'badges.new': 'Yangi nishon: {name}',
+  'badge.firstSolve.title': "Birinchi to'g'ri yechim",
+  'badge.firstSolve.description': "Istalgan masalaning barcha testlaridan Tekshirish orqali o'ting.",
+  'badge.activeDays.title': '7 kunlik faollik',
+  'badge.activeDays.description': "7 xil kunda masalani to'g'ri yeching.",
 
   'learn.title': 'CodeVision qanday ishlaydi',
   'learn.p1':
@@ -1365,6 +1393,20 @@ const ru: Record<TranslationKey, string> = {
   'check.noOutput': 'Ничего не выведено',
   'check.differentLine': 'Отличается строка {line}.',
   'check.stale': 'Код изменился после этой проверки. Нажмите «Проверить» ещё раз, чтобы проверить новый код.',
+  'problem.question': 'Есть вопрос?',
+  'problem.askTelegram': 'Напишите в Telegram-группу',
+  'link.newTab': '(откроется в новой вкладке)',
+
+  'badges.title': 'Значки',
+  'badges.deviceOnly': 'Эти значки сохраняются только на этом устройстве.',
+  'badges.unlocked': 'Получен',
+  'badges.locked': 'Ещё не получен',
+  'badges.progress': '{count} из {goal} дней',
+  'badges.new': 'Новый значок: {name}',
+  'badge.firstSolve.title': 'Первое верное решение',
+  'badge.firstSolve.description': 'Пройдите все тесты любой задачи кнопкой «Проверить».',
+  'badge.activeDays.title': '7 дней практики',
+  'badge.activeDays.description': 'Решите задачу верно в 7 разных дней.',
 
   'learn.title': 'Как работает CodeVision',
   'learn.p1':

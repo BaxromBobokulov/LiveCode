@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
 import Button from '../../components/Button'
 import Chip from '../../components/Chip'
+import { TELEGRAM_GROUP_URL } from '../../constants/links'
 import type { Problem } from '../../data/problems/types'
 import { UnsupportedConstructError } from '../../engine/errors'
 import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
+import { BadgeIcon } from './Badges'
 import type { CaseResult, CheckResult } from './checkSolution'
 import DifficultyBadge from './DifficultyBadge'
 import StatementText from './StatementText'
@@ -107,6 +109,7 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
   const code = usePlaygroundStore((state) => state.code)
   const checkResult = usePlaygroundStore((state) => state.checkResult)
   const checkedCode = usePlaygroundStore((state) => state.checkedCode)
+  const newBadges = usePlaygroundStore((state) => state.newBadges)
   const check = usePlaygroundStore((state) => state.check)
   const setTab = usePlaygroundStore((state) => state.setTab)
   const { t, locale } = useTranslation()
@@ -203,6 +206,22 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
         <div>
           <h3 className="mb-1.75 text-label text-textMuted">{t('problem.task')}</h3>
           <StatementText text={problem.statement[locale]} className="text-body-md text-text" />
+          {/* The link's 44px touch area overlaps the lines around it (-my-3), like "Run with this input". */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-body-sm text-textMuted">
+            {t('problem.question')}
+            <a
+              href={TELEGRAM_GROUP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="-my-3 inline-flex min-h-11 items-center gap-1 rounded-control font-semibold text-accentText hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              {t('problem.askTelegram')}
+              <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3">
+                <path d="M4.5 2.5h5v5M9.5 2.5 3 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="sr-only">{t('link.newTab')}</span>
+            </a>
+          </p>
         </div>
 
         {isStale && (
@@ -241,6 +260,19 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
             )}
 
             {!checkResult.passed && <p className="text-body-sm text-textMuted">{t('check.hint')}</p>}
+
+            {/* Shown on the Check that unlocked a badge only; the Problems section's shelf lists them all. */}
+            {newBadges.map((id) => (
+              <div key={id} className="flex items-center gap-3 border-t border-border pt-3">
+                <BadgeIcon id={id} unlocked />
+                <div className="flex flex-col">
+                  <span className="text-body-md font-semibold text-text">
+                    {t('badges.new', { name: t(`badge.${id}.title`) })}
+                  </span>
+                  <span className="text-body-sm text-textMuted">{t('badges.deviceOnly')}</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

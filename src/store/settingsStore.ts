@@ -15,7 +15,7 @@ const EXPLANATION_SIZE_DEFAULT = 15
 export const playbackSpeeds = [0.5, 1, 1.5, 2]
 const PLAYBACK_SPEED_DEFAULT = 1
 
-// Theme, language, the Playground split, the explanation text size and the Auto Play speed are the only things CodeVision saves between visits
+// Theme, language, the Playground split, the explanation text size and the Auto Play speed are the only preferences CodeVision saves between visits (badges are in badgesStore)
 // (AGENTS.md § State Management Rules).
 // index.html reads the same theme key before the first paint, so keep the two in sync.
 const THEME_KEY = 'codevision.theme'

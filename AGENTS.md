@@ -228,7 +228,16 @@ The Problems tab (`src/features/problems/ProblemsScreen.tsx`) lists each topic w
 
 **"Run with this input":** a failed case that has a non-empty `input` gets a small link-style action at the end of its compact line — a play icon and the word "Run" (`button.run`) in `accentText`, with the full "Run with this input" (`check.runWithInput`) as its accessible name and tooltip; its touch area is 44px tall but overlaps the lines around it, so the row doesn't grow. It puts that input in the Input field and presses Run — `setInput(input)` followed by `PlaygroundScreen`'s own `handleRun`, the exact path a student typing the values and pressing Run takes (same trace, same missing-input handling, same folding of the Input field into its summary). Side by side, it then scrolls the editor and Execution panels into view, since they sit below the result box; stacked, `handleRun` already scrolls to the Execution panel. It is never shown on a passed case, on a case without input, or when the same error is shown once for all cases. After an edit, the result stays but gets the dashed stale outline and a "press Check again" note, like a stale trace. The pass/fail meaning is carried by the icon and the words, never by color alone.
 
-**No tracking:** problem attempts and results are never saved (not even to localStorage) or sent anywhere, and Check sends no analytics event. Feedback is instant and in the browser only.
+**No tracking:** problem attempts and results are never sent anywhere, and Check sends no analytics event. Feedback is instant and in the browser only. The one thing saved is the badges below, in this browser's localStorage — not the code, not which problem, not the attempts.
+
+**Telegram link:** under every problem's statement, `ProblemPanel` shows a muted "Have a question?" (`problem.question`) followed by an `accentText` link "Ask in the Telegram group" (`problem.askTelegram`) that opens the teaching group's chat in a new tab (with an sr-only `link.newTab` note). The URL is the single constant `TELEGRAM_GROUP_URL` in `src/constants/links.ts` — change it there and nowhere else. (Learn has no per-lesson blocks, so the link is only on problems.)
+
+**Badges (local only):** `src/store/badgesStore.ts` holds two badges, saved in localStorage with the same safe `try`/`catch` reads and writes as `settingsStore` (without localStorage they still work until a reload). There is no account and no backend: badges belong to this browser on this device, and both places that show them say so (`badges.deviceOnly`, "These badges are saved on this device only").
+
+- `firstSolve` — "First correct solution" (*Birinchi to'g'ri yechim*): the first Check that passes every test case of any problem.
+- `activeDays` — "7 days of practice" (*7 kunlik faollik*): fully passing Checks on `ACTIVE_DAYS_GOAL` (7) different calendar days, **not necessarily consecutive** (a deliberate choice: classes meet a few times a week, and a streak that resets on a missed day would punish exactly the students who most need encouragement).
+
+The only input is "did this Check fully pass": `check()` in `playgroundStore` calls `recordPass()` when `checkResult.passed`, and nothing else is tracked. Storage is two JSON string arrays: `codevision.badges` (unlocked badge ids) and `codevision.passDays` (the student's *local* calendar dates, `"2026-10-24"`, each once — `localDate()`, not `toISOString()`, which would give the UTC date). `recordPass()` returns the badges that pass newly unlocked; the store keeps them as `newBadges` (cleared when a problem or example loads), and the Check result box announces them below its rows ("New badge: …", same `BadgeIcon` and the device-only note), inside its existing `role="status"`, so a badge appears exactly once. The Problems section shows every badge in a `BadgeShelf` panel under its intro: unlocked badges get the passed-Check tokens (`success` border, `successTint`, `successText` icon and "Unlocked"), locked ones a dashed `borderStrong` outline with `textMuted` text, and a locked `activeDays` shows its progress ("3 of 7 days"). No leaderboard, no profile, nothing sent anywhere.
 
 ---
 
@@ -278,7 +287,7 @@ Otherwise, always stick to Tailwind utilities.
 
 ## State Management Rules
 
-Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, the Code/Execution split ratio, the step explanation's text size (the A− / A+ buttons in the navbar), and the Auto Play speed (0.5× / 1× / 1.5× / 2× next to the step controls).
+Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, the Code/Execution split ratio, the step explanation's text size (the A− / A+ buttons in the navbar), and the Auto Play speed (0.5× / 1× / 1.5× / 2× next to the step controls) — plus the unlocked badges and the dates of fully passing Checks in `badgesStore` (see "Badges (local only)" under Problems).
 
 ---
 
