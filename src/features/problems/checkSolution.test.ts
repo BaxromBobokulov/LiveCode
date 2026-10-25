@@ -3,8 +3,15 @@ import { problems } from '../../data/problems'
 import { absoluteValueProblem } from '../../data/problems/absoluteValue'
 import { countDigitsProblem } from '../../data/problems/countDigits'
 import { countdownProblem } from '../../data/problems/countdown'
+import { countPositivesProblem } from '../../data/problems/countPositives'
+import { discountProblem } from '../../data/problems/discount'
 import { largerOfTwoProblem } from '../../data/problems/largerOfTwo'
-import { CodeError } from '../../engine/errors'
+import { largestElementProblem } from '../../data/problems/largestElement'
+import { rowSumsProblem } from '../../data/problems/rowSums'
+import { sumToNProblem } from '../../data/problems/sumToN'
+import { timesTableProblem } from '../../data/problems/timesTable'
+import { CodeError, UnsupportedConstructError } from '../../engine/errors'
+import { parse } from '../../engine/parser'
 import { checkSolution } from './checkSolution'
 
 const lines = (...code: string[]) => code.join('\n')
@@ -95,6 +102,13 @@ const solutions: Record<string, string> = {
     '    return 0;',
     '}',
   ),
+  // The debug problems' starter code with its one mistake fixed.
+  sumToN: sumToNProblem.starterCode!.join('\n').replace('i < n', 'i <= n'),
+  rowSums: rowSumsProblem.starterCode!.join('\n').replace('grid[j][i]', 'grid[i][j]'),
+  discount: discountProblem.starterCode!.join('\n').replace('if (price > 100);', 'if (price > 100)'),
+  timesTable: timesTableProblem.starterCode!.join('\n').replace('n * i);', 'n * i);\n        i++;'),
+  countPositives: countPositivesProblem.starterCode!.join('\n').replace('for (i = 1;', 'for (i = 0;'),
+  largestElement: largestElementProblem.starterCode!.join('\n').replace('i <= 5', 'i < 5'),
 }
 
 describe('checkSolution', () => {
@@ -110,6 +124,20 @@ describe('checkSolution', () => {
       expect(checkSolution(problem, fixed).passed).toBe(false)
     }
   })
+
+  // A debug problem's starter code is valid code in the supported subset that fails Check: a wrong answer,
+  // or a runtime mistake like a loop that never ends — never a syntax error or a "Not supported yet".
+  it.each(problems.filter((problem) => problem.kind === 'debug').map((problem) => [problem.id, problem] as const))(
+    'fails the buggy starter code of %s with a wrong answer or a runtime error',
+    (_, problem) => {
+      expect(problem.starterCode).toBeDefined()
+      const code = problem.starterCode!.join('\n')
+      expect(() => parse(code)).not.toThrow()
+      const result = checkSolution(problem, code)
+      expect(result.passed).toBe(false)
+      expect(result.cases.every((testCase) => !(testCase.error instanceof UnsupportedConstructError))).toBe(true)
+    },
+  )
 
   it('fails the untouched starter code and says which line differs', () => {
     const result = checkSolution(absoluteValueProblem, absoluteValueProblem.starterCode!.join('\n'))

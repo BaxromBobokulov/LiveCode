@@ -3,7 +3,7 @@ import { examples } from '../data/examples'
 import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
 import { CodeError, UnsupportedConstructError, constructName, isMissingInput } from './errors'
-import { runUserCode } from './interpreter'
+import { MAX_STEPS, runUserCode } from './interpreter'
 import type { Step } from './types'
 
 function stepsOf(source: string): Step[] {
@@ -804,6 +804,14 @@ describe('runUserCode', () => {
     // A function called from a loop is still outside it, as in real C.
     const result = runUserCode(lines('void f() {', '    break;', '}', 'int main() {', '    while (1) f();', '    return 0;', '}'))
     expect(result).toMatchObject({ error: { line: 2, text: { key: 'codeError.outsideLoop' } } })
+  })
+
+  it('stops a loop that never ends at the step limit instead of hanging', () => {
+    // Even an empty body makes one step per iteration (the loop check), so the limit is always reached.
+    for (const loop of ['while (i < 5) {', 'for (;;) {']) {
+      const result = runUserCode(lines('int main() {', '    int i = 0;', `    ${loop}`, '    }', '    return 0;', '}'))
+      expect(result).toMatchObject({ error: { line: 3, text: { key: 'codeError.stepLimit', values: { max: MAX_STEPS } } } })
+    }
   })
 
   describe('pointers', () => {

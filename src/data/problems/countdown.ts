@@ -9,6 +9,7 @@ export const countdownProblem: Problem = {
   },
   topic: 'while',
   difficulty: 'easy',
+  kind: 'write',
   statement: {
     uz: "Dastur `scanf` bilan bitta butun son `i` ni o'qiydi. `while` siklidan foydalanib, `i` dan `1` gacha bo'lgan sonlarni kamayish tartibida chiqaring, har birini alohida qatorga. `i` 1 dan kichik bo'lsa, hech narsa chiqarmang.\n\nSiklning tanasida `i` ni chiqaring, keyin uni 1 ga kamaytiring.\n\nMasalan, kiritilgan qiymat `5` bo'lsa, natija:\n`5`\n`4`\n`3`\n`2`\n`1`\n\nTekshirish dasturingizni bir nechta har xil qiymatlar bilan ishga tushiradi.",
     en: 'The program reads one whole number `i` with `scanf`. Using a `while` loop, print the numbers from `i` down to `1`, each on its own line. If `i` is less than 1, print nothing.\n\nInside the loop body, print `i`, then decrease it by 1.\n\nFor example, if the input is `5`, the output must be:\n`5`\n`4`\n`3`\n`2`\n`1`\n\nCheck runs your program with several different inputs.',

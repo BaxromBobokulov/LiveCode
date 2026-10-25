@@ -1,9 +1,15 @@
 import { absoluteValueProblem } from './absoluteValue'
 import { countDigitsProblem } from './countDigits'
+import { countPositivesProblem } from './countPositives'
 import { countdownProblem } from './countdown'
 import { digitSumProblem } from './digitSum'
+import { discountProblem } from './discount'
 import { largerOfTwoProblem } from './largerOfTwo'
+import { largestElementProblem } from './largestElement'
 import { letterGradeProblem } from './letterGrade'
+import { rowSumsProblem } from './rowSums'
+import { sumToNProblem } from './sumToN'
+import { timesTableProblem } from './timesTable'
 import type { Problem, ProblemTopic } from './types'
 
 export const problems: Problem[] = [
@@ -13,6 +19,12 @@ export const problems: Problem[] = [
   countdownProblem,
   countDigitsProblem,
   digitSumProblem,
+  sumToNProblem,
+  rowSumsProblem,
+  discountProblem,
+  timesTableProblem,
+  countPositivesProblem,
+  largestElementProblem,
 ]
 
 /** Topics in the order the Problems screen lists them. A topic with no problems yet isn't shown. */

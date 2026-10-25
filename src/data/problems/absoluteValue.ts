@@ -9,6 +9,7 @@ export const absoluteValueProblem: Problem = {
   },
   topic: 'conditions',
   difficulty: 'easy',
+  kind: 'write',
   statement: {
     uz: "Dastur `scanf` bilan bitta butun son `n` ni o'qiydi. Uning modulini (ishorasiz qiymatini) chiqaring: agar `n` manfiy bo'lsa, uni musbatga aylantiring, keyin `printf` bilan chiqaring.\n\nMasalan, kiritilgan qiymat `-7` bo'lsa, natija `7` bo'lishi kerak.\n\nTekshirish dasturingizni bir nechta har xil qiymatlar bilan ishga tushiradi.",
     en: 'The program reads one whole number `n` with `scanf`. Print its absolute value (the number without its minus sign): if `n` is negative, make it positive, then print it with `printf`.\n\nFor example, if the input is `-7`, the output must be `7`.\n\nCheck runs your program with several different inputs.',

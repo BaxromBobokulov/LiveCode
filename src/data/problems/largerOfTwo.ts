@@ -9,6 +9,7 @@ export const largerOfTwoProblem: Problem = {
   },
   topic: 'conditions',
   difficulty: 'easy',
+  kind: 'write',
   statement: {
     uz: "Dastur `scanf` bilan ikkita butun son o'qiydi: `a` va `b`. Ulardan kattasini chiqaring. Sonlar teng bo'lsa, shu sonni chiqaring.\n\nMasalan, kiritilgan qiymatlar `3 8` bo'lsa, natija `8` bo'lishi kerak.\n\nTekshirish dasturingizni bir nechta har xil qiymatlar bilan ishga tushiradi. O'zingiz sinab ko'rish uchun qiymatlarni muharrir ostidagi Kiritish maydoniga yozing.",
     en: 'The program reads two whole numbers with `scanf`: `a` and `b`. Print the larger one. If they are equal, print that number.\n\nFor example, if the input is `3 8`, the output must be `8`.\n\nCheck runs your program with several different inputs. To try it yourself, type the values into the Input field under the editor.',

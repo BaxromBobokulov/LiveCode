@@ -82,7 +82,7 @@ function problemStartProgram(problem: Problem): ExampleProgram {
         array: null,
         loop: null,
         output: '',
-        explanation: [{ key: 'step.problemStart' }],
+        explanation: [{ key: problem.kind === 'debug' ? 'step.debugProblemStart' : 'step.problemStart' }],
       },
     ],
   }

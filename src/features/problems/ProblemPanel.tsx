@@ -9,6 +9,7 @@ import { usePlaygroundStore } from '../../store/playgroundStore'
 import { BadgeIcon } from './Badges'
 import type { CaseResult, CheckResult } from './checkSolution'
 import DifficultyBadge from './DifficultyBadge'
+import ProblemKindBadge from './ProblemKindBadge'
 import StatementText from './StatementText'
 
 /** A check mark or a cross, so a result isn't told by color alone. */
@@ -196,6 +197,7 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
             ← {t('problem.allProblems')}
           </Button>
           <h2 className="text-body-md font-semibold">{problem.title[locale]}</h2>
+          <ProblemKindBadge kind={problem.kind} />
           <DifficultyBadge difficulty={problem.difficulty} />
           <Chip>{t(`problems.topic.${problem.topic}`)}</Chip>
         </div>

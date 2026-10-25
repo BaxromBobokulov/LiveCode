@@ -4,6 +4,7 @@ import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { BadgeShelf } from './Badges'
 import DifficultyBadge from './DifficultyBadge'
+import ProblemKindBadge from './ProblemKindBadge'
 import StatementText from './StatementText'
 
 const difficultyOrder: Difficulty[] = ['easy', 'medium', 'hard']
@@ -44,8 +45,11 @@ function ProblemsScreen() {
                       <span className="text-body-md font-semibold text-text">{problem.title[locale]}</span>
                       <DifficultyBadge difficulty={problem.difficulty} />
                     </div>
+                    <div className="w-full px-4.5 pt-3">
+                      <ProblemKindBadge kind={problem.kind} />
+                    </div>
                     {/* The statement's first paragraph, cut to three lines. */}
-                    <div className="line-clamp-3 w-full flex-1 px-4.5 py-3 text-body-sm text-text">
+                    <div className="line-clamp-3 w-full flex-1 px-4.5 pt-2 pb-3 text-body-sm text-text">
                       <StatementText text={problem.statement[locale].split('\n\n')[0]} />
                     </div>
                     {isOpen && (
