@@ -9,7 +9,11 @@ import type { Locale, Theme } from '../store/settingsStore'
 type AnalyticsEvents = {
   example_opened: { exampleName: string }
   code_run: { source: 'example' | 'custom' }
-  code_run_error: { errorType: 'UnsupportedConstructError' | 'CodeError' }
+  // For an unsupported construct: which one (constructName() in src/engine/errors.ts) and the message
+  // key that explains it, e.g. "unsupported.pointerArithmetic". Never the code itself.
+  code_run_error:
+    | { errorType: 'CodeError' }
+    | { errorType: 'UnsupportedConstructError'; construct: string; messageKey: string }
   language_changed: { language: Locale }
   theme_changed: { theme: Theme }
 }

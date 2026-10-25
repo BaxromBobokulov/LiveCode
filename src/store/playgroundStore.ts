@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
 import { getProblem } from '../data/problems'
 import type { Problem } from '../data/problems/types'
-import { UnsupportedConstructError, isMissingInput, type RunError } from '../engine/errors'
+import { UnsupportedConstructError, constructName, isMissingInput, type RunError } from '../engine/errors'
 import { runUserCode, usesScanf } from '../engine/interpreter'
 import { checkSolution, type CheckResult } from '../features/problems/checkSolution'
 import { track } from '../lib/analytics'
@@ -230,9 +230,13 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       track('code_run', { source: 'custom' })
       const result = runUserCode(code, input)
       if ('error' in result) {
-        track('code_run_error', {
-          errorType: result.error instanceof UnsupportedConstructError ? 'UnsupportedConstructError' : 'CodeError',
-        })
+        const { error } = result
+        track(
+          'code_run_error',
+          error instanceof UnsupportedConstructError
+            ? { errorType: 'UnsupportedConstructError', construct: constructName(error), messageKey: error.text.key }
+            : { errorType: 'CodeError' },
+        )
         // Keep the previous trace, back on its first step, and show what went wrong.
         // The Input field opens up again, since the problem may be in its values.
         set({

@@ -26,6 +26,11 @@ export type StepFact =
   | { kind: 'readCell'; target: string; value: string }
   /** A rand() call worked out while running this line, and the number it gave. */
   | { kind: 'rand'; value: string }
+  /**
+   * A sizeof worked out while running this line: `size` bytes of `type`. `count` is set when it measured a
+   * whole array, or one row of a 2D array (`isRow`): that many elements of `type`.
+   */
+  | { kind: 'sizeof'; source: string; type: string; size: number; count: number | null; isRow: boolean }
   /** A time(NULL) call worked out while running this line: the seconds since 1 January 1970. */
   | { kind: 'time'; value: string }
   /** srand(seed) started a new sequence of random numbers. `fromTime` marks srand(time(NULL)). */
@@ -204,6 +209,13 @@ export function explain(fact: StepFact): Phrase[] {
 
     case 'time':
       return [{ key: 'explain.time', values: { value: fact.value } }]
+
+    case 'sizeof': {
+      const values = { expr: fact.source, size: fact.size, type: fact.type }
+      if (fact.count === null) return [{ key: 'explain.sizeof', values }]
+      const element = fact.size / fact.count
+      return [{ key: fact.isRow ? 'explain.sizeofRow' : 'explain.sizeofArray', values: { ...values, count: fact.count, element } }]
+    }
 
     case 'srand':
       return [{ key: fact.fromTime ? 'explain.srandTime' : 'explain.srand', values: { value: showValue(fact.seed) } }]

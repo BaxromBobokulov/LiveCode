@@ -82,6 +82,10 @@ const en = {
   'construct.localStruct': 'struct defined inside a function',
   'construct.structArray': 'array of structs',
   'construct.designatedInit': 'field names in { }',
+  'construct.sizeofPointer': 'sizeof on a pointer',
+  'construct.sizeofStruct': 'sizeof on a struct',
+  'construct.sizeofExpression': 'sizeof on an expression',
+  'construct.sizeofArrayParam': 'sizeof on an array parameter',
 
   'unsupported.doubleType': 'The double type is not supported yet. Use float instead.',
   'unsupported.onlyBasicTypes': 'Only the int, float and char types are supported.',
@@ -129,6 +133,11 @@ const en = {
   'unsupported.structArray': 'Arrays of structs (like struct Point pts[3]) are not supported yet.',
   'unsupported.designatedInit': 'Naming fields in { } (like {.x = 1}) is not supported yet. List the values in the order the fields are declared, e.g. {1, 2}.',
   'unsupported.pointerToField': 'Pointers to struct fields (like &p.x) are not supported yet.',
+  'unsupported.sizeofPointer': 'sizeof on a pointer is not supported yet. sizeof works on int, float and char, on variables of those types and on arrays of them.',
+  'unsupported.sizeofStruct': 'sizeof on a struct or a struct field is not supported yet. sizeof works on int, float and char, on variables of those types and on arrays of them.',
+  'unsupported.sizeofExpression': 'sizeof on a calculation like {expr} is not supported yet. Use it on a type, sizeof(int), a variable, sizeof(x), or an array, sizeof(arr).',
+  'unsupported.sizeofArrayParam':
+    "Inside a function, the array parameter {name} only holds the address of the caller's array, so in real C sizeof({name}) gives the size of that address, not of the array. This is not supported: pass the array's length as another parameter instead.",
   'unsupported.recursion':
     '{name} is called again while it is still running (recursion). Recursion is not supported yet. Use a loop instead.',
 
@@ -295,6 +304,9 @@ const en = {
   'explain.derefWrite': "{deref} is {target}, the variable {pointer} points to, so this line changes {target}.",
   'explain.rand': 'rand() gives the next random number: {value} (always between 0 and 32767).',
   'explain.time': 'time(NULL) gives the current time: {value} seconds since 1 January 1970.',
+  'explain.sizeof': '{expr} gives {size}, the number of bytes of memory one {type} takes.',
+  'explain.sizeofArray': '{expr} gives {size}, the number of bytes the whole array takes: {count} × {element} = {size} (number of elements × bytes per {type}).',
+  'explain.sizeofRow': '{expr} gives {size}, the number of bytes one row takes: {count} × {element} = {size} (number of elements × bytes per {type}).',
   'explain.srandTime':
     'Seed the random numbers with {value}. The time changes every second, so each Run gets different rand() numbers.',
   'explain.srand':
@@ -549,6 +561,10 @@ const uz: Record<TranslationKey, string> = {
   'construct.localStruct': 'funksiya ichida aniqlangan struktura',
   'construct.structArray': 'strukturalar massivi',
   'construct.designatedInit': '{ } ichida maydon nomlari',
+  'construct.sizeofPointer': "ko'rsatkichga sizeof",
+  'construct.sizeofStruct': 'strukturaga sizeof',
+  'construct.sizeofExpression': 'ifodaga sizeof',
+  'construct.sizeofArrayParam': 'massiv parametriga sizeof',
 
   'unsupported.doubleType': "double turi hali qo'llab-quvvatlanmaydi. Uning o'rniga float dan foydalaning.",
   'unsupported.onlyBasicTypes': "Faqat int, float va char turlari qo'llab-quvvatlanadi.",
@@ -596,6 +612,11 @@ const uz: Record<TranslationKey, string> = {
   'unsupported.structArray': "Strukturalar massivi (struct Point pts[3] kabi) hali qo'llab-quvvatlanmaydi.",
   'unsupported.designatedInit': "{ } ichida maydonlarni nomlash ({.x = 1} kabi) hali qo'llab-quvvatlanmaydi. Qiymatlarni maydonlar e'lon qilingan tartibda yozing, masalan {1, 2}.",
   'unsupported.pointerToField': "Struktura maydoniga ko'rsatkich (&p.x kabi) hali qo'llab-quvvatlanmaydi.",
+  'unsupported.sizeofPointer': "Ko'rsatkichga sizeof hali qo'llab-quvvatlanmaydi. sizeof int, float va char turlari, shu turdagi o'zgaruvchilar va ularning massivlari bilan ishlaydi.",
+  'unsupported.sizeofStruct': "Struktura yoki uning maydoniga sizeof hali qo'llab-quvvatlanmaydi. sizeof int, float va char turlari, shu turdagi o'zgaruvchilar va ularning massivlari bilan ishlaydi.",
+  'unsupported.sizeofExpression': "{expr} kabi hisob-kitobga sizeof hali qo'llab-quvvatlanmaydi. Uni turga — sizeof(int), o'zgaruvchiga — sizeof(x) yoki massivga — sizeof(arr) qo'llang.",
+  'unsupported.sizeofArrayParam':
+    "Funksiya ichida {name} massiv parametri faqat chaqiruvchi massivning manzilini saqlaydi, shuning uchun haqiqiy C da sizeof({name}) massivning emas, shu manzilning hajmini beradi. Bu qo'llab-quvvatlanmaydi: massiv uzunligini alohida parametr sifatida uzating.",
   'unsupported.recursion':
     "{name} hali bajarilayotgan paytda yana chaqirilmoqda (rekursiya). Rekursiya hali qo'llab-quvvatlanmaydi. Uning o'rniga sikldan foydalaning.",
 
@@ -763,6 +784,9 @@ const uz: Record<TranslationKey, string> = {
   'explain.derefWrite': "{deref} — bu {target}, ya'ni {pointer} ko'rsatayotgan o'zgaruvchi, shuning uchun bu qator {target} ni o'zgartiradi.",
   'explain.rand': "rand() navbatdagi tasodifiy sonni beradi: {value} (har doim 0 dan 32767 gacha).",
   'explain.time': "time(NULL) hozirgi vaqtni beradi: 1970-yil 1-yanvardan beri {value} soniya.",
+  'explain.sizeof': "{expr} natijasi {size}: bitta {type} qiymati xotirada shuncha bayt joy egallaydi.",
+  'explain.sizeofArray': "{expr} natijasi {size}: butun massiv xotirada shuncha bayt egallaydi — {count} × {element} = {size} (elementlar soni × bitta {type} baytlari).",
+  'explain.sizeofRow': "{expr} natijasi {size}: bitta qator xotirada shuncha bayt egallaydi — {count} × {element} = {size} (elementlar soni × bitta {type} baytlari).",
   'explain.srandTime':
     "Tasodifiy sonlarning boshlang'ich qiymati (seed) {value} qilib o'rnatiladi. Vaqt har soniyada o'zgaradi, shuning uchun har bir ishga tushirishda rand() boshqa sonlarni beradi.",
   'explain.srand':
@@ -1021,6 +1045,10 @@ const ru: Record<TranslationKey, string> = {
   'construct.localStruct': 'структура, определённая внутри функции',
   'construct.structArray': 'массив структур',
   'construct.designatedInit': 'имена полей в { }',
+  'construct.sizeofPointer': 'sizeof для указателя',
+  'construct.sizeofStruct': 'sizeof для структуры',
+  'construct.sizeofExpression': 'sizeof для выражения',
+  'construct.sizeofArrayParam': 'sizeof для параметра-массива',
 
   'unsupported.doubleType': 'Тип double пока не поддерживается. Используйте float.',
   'unsupported.onlyBasicTypes': 'Поддерживаются только типы int, float и char.',
@@ -1068,6 +1096,11 @@ const ru: Record<TranslationKey, string> = {
   'unsupported.structArray': 'Массивы структур (например, struct Point pts[3]) пока не поддерживаются.',
   'unsupported.designatedInit': 'Имена полей в { } (например, {.x = 1}) пока не поддерживаются. Перечислите значения в порядке объявления полей, например {1, 2}.',
   'unsupported.pointerToField': 'Указатели на поля структуры (например, &p.x) пока не поддерживаются.',
+  'unsupported.sizeofPointer': 'sizeof для указателя пока не поддерживается. sizeof работает с типами int, float и char, с переменными этих типов и с их массивами.',
+  'unsupported.sizeofStruct': 'sizeof для структуры или её поля пока не поддерживается. sizeof работает с типами int, float и char, с переменными этих типов и с их массивами.',
+  'unsupported.sizeofExpression': 'sizeof для вычисления вроде {expr} пока не поддерживается. Применяйте его к типу — sizeof(int), к переменной — sizeof(x) или к массиву — sizeof(arr).',
+  'unsupported.sizeofArrayParam':
+    'Внутри функции параметр-массив {name} хранит только адрес массива вызывающей функции, поэтому в настоящем C sizeof({name}) даёт размер этого адреса, а не массива. Это не поддерживается: передайте длину массива отдельным параметром.',
   'unsupported.recursion':
     '{name} вызывается снова, пока ещё выполняется (рекурсия). Рекурсия пока не поддерживается. Используйте цикл.',
 
@@ -1235,6 +1268,9 @@ const ru: Record<TranslationKey, string> = {
   'explain.derefWrite': "{deref} — это {target}, переменная, на которую указывает {pointer}, поэтому эта строка меняет {target}.",
   'explain.rand': 'rand() выдаёт следующее случайное число: {value} (всегда от 0 до 32767).',
   'explain.time': 'time(NULL) выдаёт текущее время: {value} секунд с 1 января 1970 года.',
+  'explain.sizeof': '{expr} равно {size} — столько байт памяти занимает одно значение типа {type}.',
+  'explain.sizeofArray': '{expr} равно {size} — столько байт занимает весь массив: {count} × {element} = {size} (число элементов × байт на один {type}).',
+  'explain.sizeofRow': '{expr} равно {size} — столько байт занимает одна строка: {count} × {element} = {size} (число элементов × байт на один {type}).',
   'explain.srandTime':
     'Задаём начальное значение (seed) случайных чисел: {value}. Время меняется каждую секунду, поэтому при каждом запуске rand() выдаёт другие числа.',
   'explain.srand':

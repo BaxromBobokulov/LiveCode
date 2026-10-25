@@ -31,6 +31,8 @@ export type Expr =
   | { kind: 'null'; line: number }
   /** `p.x`: one field of the struct variable `name`. Only a variable's name can come before the `.`. */
   | { kind: 'field'; line: number; name: string; field: string }
+  /** `sizeof(int)`, or `sizeof(x)` / `sizeof(arr)` / `sizeof(arr[i])` / `sizeof(grid[i])` / `sizeof(grid[i][j])`. */
+  | { kind: 'sizeof'; line: number; of: NumType | Extract<Expr, { kind: 'var' | 'index' | 'cell' }> }
 
 /** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]`, `*p` or `p.x`. */
 export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' | 'field' }>
@@ -173,6 +175,8 @@ export function toSource(expr: Expr): string {
       return 'NULL'
     case 'field':
       return `${expr.name}.${expr.field}`
+    case 'sizeof':
+      return `sizeof(${typeof expr.of === 'string' ? expr.of : toSource(expr.of)})`
   }
 }
 
@@ -217,7 +221,6 @@ const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> 
   case: switchStatement,
   default: switchStatement,
   goto: [code('goto'), { key: 'unsupported.goto' }],
-  sizeof: notYet('sizeof'),
   const: qualifier('const'),
   static: qualifier('static'),
   extern: [code('extern'), { key: 'unsupported.extern' }],
@@ -273,6 +276,15 @@ function rejectUnsupportedOperator(token: Token) {
 /** A struct feature outside the supported subset, e.g. an array of structs. */
 function structError(line: number, construct: TranslationKey, key: TranslationKey): UnsupportedConstructError {
   return new UnsupportedConstructError(line, { key: construct }, { key })
+}
+
+/** `sizeof` on something it doesn't work on yet: a pointer, a struct, an expression or an array parameter. */
+export function sizeofError(
+  line: number,
+  of: 'Pointer' | 'Struct' | 'Expression' | 'ArrayParam',
+  values?: Phrase['values'],
+): UnsupportedConstructError {
+  return new UnsupportedConstructError(line, { key: `construct.sizeof${of}` }, { key: `unsupported.sizeof${of}`, values })
 }
 
 /** A pointer feature outside the supported subset, e.g. `int **p` or `p + 1`. */
@@ -949,7 +961,31 @@ export function parse(source: string): Program {
       if (token.text === '~') throw new UnsupportedConstructError(token.line, ...bitwise('~'))
       if (token.text === '++' || token.text === '--') rejectUnsupportedOperator(token)
     }
+    if (token.kind === 'keyword' && token.text === 'sizeof') return parseSizeof()
     return parsePrimary()
+  }
+
+  /**
+   * `sizeof(int)`, or `sizeof` on a variable or array, with or without parentheses: `sizeof x`, `sizeof(arr)`.
+   * Whether a name is a pointer, a struct or an array parameter is only known when it runs.
+   */
+  function parseSizeof(): Expr {
+    const keyword = advance() // sizeof
+    const line = keyword.line
+    if (is('(') && (isType(1) || is('struct', 1))) {
+      advance() // (
+      if (is('struct')) throw sizeofError(line, 'Struct')
+      const type = advance().text as NumType
+      if (is('*')) throw sizeofError(line, 'Pointer')
+      expect(')')
+      return { kind: 'sizeof', line, of: type }
+    }
+    // `sizeof(double)` and the like fall through to parsePrimary, which names the unsupported type.
+    const operand = parseUnary()
+    if (operand.kind === 'var' || operand.kind === 'index' || operand.kind === 'cell') return { kind: 'sizeof', line, of: operand }
+    if (operand.kind === 'deref' || operand.kind === 'address' || operand.kind === 'null') throw sizeofError(line, 'Pointer')
+    if (operand.kind === 'field') throw sizeofError(line, 'Struct')
+    throw sizeofError(line, 'Expression', { expr: toSource(operand) })
   }
 
   /** `&x`: the address of a plain variable. `&arr[i]` would be a pointer into an array. */

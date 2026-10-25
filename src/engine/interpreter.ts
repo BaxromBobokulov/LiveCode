@@ -7,6 +7,7 @@ import {
   parse,
   pointerError,
   quoteText,
+  sizeofError,
   toSource,
   type BinaryOp,
   type Declarator,
@@ -23,6 +24,9 @@ import { fieldKey, variableKey, type ArrayView, type GridCell, type GridView, ty
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
+
+/** The bytes one value of each type takes for sizeof, as with the usual C compilers (char is always 1). */
+export const TYPE_SIZES: Record<NumType, number> = { int: 4, float: 4, char: 1 }
 
 /** The largest number rand() gives, as in most C compilers' <stdlib.h>. */
 export const RAND_MAX = 32767
@@ -520,6 +524,45 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const value = Math.floor(Date.now() / 1000) | 0
     cellReads.push({ kind: 'time', value: String(value) })
     return { type: 'int', value, work: String(value) }
+  }
+
+  /**
+   * `sizeof`: the bytes a type, variable or array takes. As in C it is worked out from the type alone,
+   * so the variable needs no value yet and an index like `arr[i]` is never run.
+   */
+  function evaluateSizeof(expr: Extract<Expr, { kind: 'sizeof' }>): Value {
+    const { of } = expr
+    const source = toSource(expr)
+    let fact: Extract<StepFact, { kind: 'sizeof' }>
+    if (typeof of === 'string') {
+      fact = { kind: 'sizeof', source, type: of, size: TYPE_SIZES[of], count: null, isRow: false }
+    } else {
+      const slot = lookup(of.name, of.line)
+      if (slot.kind === 'pointer') throw sizeofError(expr.line, 'Pointer')
+      if (slot.kind === 'struct') throw sizeofError(expr.line, 'Struct')
+      // An array parameter only holds the caller's array's address, so real C would give that address's size.
+      const isParam = frame().scopes[0].get(of.name) === slot && frame().fn.params.some((p) => p.name === of.name)
+      if (slot.kind !== 'scalar' && isParam) throw sizeofError(expr.line, 'ArrayParam', { name: of.name })
+
+      const element = TYPE_SIZES[slot.type]
+      if (of.kind === 'var') {
+        const count = slot.kind === 'array' ? slot.values.length : slot.kind === 'grid' ? slot.values.length * slot.values[0].length : null
+        fact = { kind: 'sizeof', source, type: slot.type, size: element * (count ?? 1), count, isRow: false }
+      } else if (of.kind === 'index' && slot.kind === 'array') {
+        fact = { kind: 'sizeof', source, type: slot.type, size: element, count: null, isRow: false }
+      } else if (of.kind === 'index' && slot.kind === 'grid') {
+        const count = slot.values[0].length
+        fact = { kind: 'sizeof', source, type: slot.type, size: element * count, count, isRow: true }
+      } else if (of.kind === 'cell' && slot.kind === 'grid') {
+        fact = { kind: 'sizeof', source, type: slot.type, size: element, count: null, isRow: false }
+      } else if (of.kind === 'cell') {
+        throw new CodeError(of.line, slot.kind === 'array' ? 'codeError.arrayNeedsOne' : 'codeError.notGrid', { name: of.name })
+      } else {
+        throw new CodeError(of.line, 'codeError.notArray', { name: of.name })
+      }
+    }
+    cellReads.push(fact)
+    return { type: 'int', value: fact.size, work: String(fact.size) }
   }
 
   // ----- Variables -----
@@ -1046,6 +1089,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
           work: `${leftWork} ${expr.op} ${wrap(right.work, expr.right, expr.op, true)}`,
         }
       }
+
+      case 'sizeof':
+        return evaluateSizeof(expr)
 
       case 'call': {
         const result = evaluateCall(expr)

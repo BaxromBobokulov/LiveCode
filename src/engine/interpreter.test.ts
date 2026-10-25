@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { examples } from '../data/examples'
 import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
-import { CodeError, UnsupportedConstructError, isMissingInput } from './errors'
+import { CodeError, UnsupportedConstructError, constructName, isMissingInput } from './errors'
 import { runUserCode } from './interpreter'
 import type { Step } from './types'
 
@@ -512,6 +512,105 @@ describe('runUserCode', () => {
     expect(runUserCode('#include <string.h>\nint main() { return 0; }')).toMatchObject({
       error: { text: { key: 'unsupported.include' } },
     })
+  })
+
+  it('gives sizeof of a type or a variable in bytes', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    char c;',
+        '    float f = 1.5;',
+        '    int a = sizeof(int);',
+        '    int b = sizeof c + sizeof(f);',
+        '    printf("%d %d", a, b);',
+        '    return 0;',
+        '}',
+      ),
+    )
+
+    expect(steps[2].variables).toContainEqual({ name: 'a', value: '4' })
+    expect(english(steps[2])).toBe('sizeof(int) gives 4, the number of bytes of memory one int takes. Create a and set it to sizeof(int) (4).')
+    // c has no value yet: like C, sizeof only looks at its type.
+    expect(steps[3].variables).toContainEqual({ name: 'b', value: '5' })
+    expect(english(steps[3])).toContain('sizeof(c) gives 1, the number of bytes of memory one char takes.')
+    expect(steps.at(-1)?.output).toBe('4 5')
+  })
+
+  it('gives sizeof of a whole array, a 2D row and one element', () => {
+    const steps = stepsOf(
+      lines(
+        'int main() {',
+        '    int arr[5] = {3, 1, 4, 1, 5};',
+        '    char name[] = "hi";',
+        '    int grid[2][3];',
+        '    int n = sizeof(arr) / sizeof(arr[0]);',
+        '    int text = sizeof(name);',
+        '    int all = sizeof(grid);',
+        '    int row = sizeof(grid[0]);',
+        '    int far = sizeof(arr[99]);',
+        '    return 0;',
+        '}',
+      ),
+    )
+    const value = (step: Step, name: string) => step.variables.find((v) => v.name === name)?.value
+
+    expect(value(steps[3], 'n')).toBe('5')
+    expect(english(steps[3])).toBe(
+      'sizeof(arr) gives 20, the number of bytes the whole array takes: 5 × 4 = 20 (number of elements × bytes per int). ' +
+        'sizeof(arr[0]) gives 4, the number of bytes of memory one int takes. ' +
+        'Create n and set it to sizeof(arr) / sizeof(arr[0]): 20 / 4 = 5.',
+    )
+    // "hi" is 2 characters plus the \0 that ends it.
+    expect(value(steps[4], 'text')).toBe('3')
+    expect(value(steps[5], 'all')).toBe('24')
+    expect(value(steps[6], 'row')).toBe('12')
+    expect(english(steps[6])).toContain('the number of bytes one row takes: 3 × 4 = 12')
+    // The index is never run, so it can't be out of range.
+    expect(value(steps[7], 'far')).toBe('4')
+  })
+
+  it('reports sizeof on something it does not cover as not supported, naming what it was used on', () => {
+    const error = (...code: string[]) => {
+      const result = runUserCode(lines(...code))
+      if (!('error' in result)) throw new Error('Expected an error')
+      expect(result.error).toBeInstanceOf(UnsupportedConstructError)
+      return result.error as UnsupportedConstructError
+    }
+    const heading = (e: UnsupportedConstructError) =>
+      formatPhrase(translations.en, { key: 'error.unsupported', values: { construct: e.construct } })
+
+    const pointer = error('int main() {', '    int x = 1;', '    int *p = &x;', '    int n = sizeof(p);', '    return 0;', '}')
+    expect(pointer).toMatchObject({ line: 4, construct: { key: 'construct.sizeofPointer' } })
+    expect(heading(pointer)).toBe('Not supported yet: sizeof on a pointer')
+    expect(constructName(pointer)).toBe('sizeofPointer')
+
+    expect(error('int main() {', '    int n = sizeof(int *);', '}').construct.key).toBe('construct.sizeofPointer')
+    expect(error('struct P { int x; };', 'int main() {', '    struct P p;', '    int n = sizeof(p);', '}').construct.key).toBe(
+      'construct.sizeofStruct',
+    )
+    expect(error('int main() {', '    int n = sizeof(1 + 2);', '}').text).toEqual({
+      key: 'unsupported.sizeofExpression',
+      values: { expr: '1 + 2' },
+    })
+    // In real C an array parameter is only an address, so sizeof would not give the array's size.
+    const param = error('int total(int a[]) {', '    return sizeof(a);', '}', 'int main() {', '    int b[4];', '    int n = total(b);', '}')
+    expect(param).toMatchObject({ line: 2, construct: { key: 'construct.sizeofArrayParam' } })
+    // A type the engine doesn't have is named by that type.
+    expect(heading(error('int main() {', '    int n = sizeof(double);', '}'))).toBe('Not supported yet: double')
+  })
+
+  it('names unsupported constructs for analytics without the code written in them', () => {
+    const construct = (body: string) => {
+      const result = runUserCode(lines('int main() {', body, '    return 0;', '}'))
+      if (!('error' in result) || !(result.error instanceof UnsupportedConstructError)) throw new Error('Expected unsupported')
+      return constructName(result.error)
+    }
+    expect(construct('    int n = sqrt(4);')).toBe('sqrt()')
+    expect(construct('    int x = 1 << 2;')).toBe('bitwise <<')
+    expect(construct('    long x = 1;')).toBe('long')
+    expect(construct('    printf("%.2f", 1.5);')).toBe('placeholder %.2f printf')
+    // The student's own argument is left out.
+    expect(construct('    int secret = 0; srand(time(secret));')).toBe('time()')
   })
 
   it('allows comments after an #include on the same line', () => {

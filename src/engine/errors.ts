@@ -35,6 +35,20 @@ export class CodeError extends Error {
 export type RunError = UnsupportedConstructError | CodeError
 
 /**
+ * The same unsupported construct in every language, for analytics: "sizeof", "sqrt()", "bitwise <<",
+ * "sizeofPointer". Whatever was written inside ( ) or " " is left out, so the student's own code
+ * (e.g. the t in time(t)) is never part of it.
+ */
+export function constructName(error: UnsupportedConstructError): string {
+  const { key, values } = error.construct
+  const parts = [key === 'construct.code' ? '' : key.replace('construct.', '')]
+  for (const value of Object.values(values ?? {})) {
+    if (typeof value === 'string') parts.push(value.replace(/\(.*\)/, '()').replace(/".*"/, '""'))
+  }
+  return parts.filter(Boolean).join(' ')
+}
+
+/**
  * A problem with one value of a scanf call. In a call that reads several values,
  * the message says which one, e.g. "Value 2 of 2 in this scanf call: ...".
  */
