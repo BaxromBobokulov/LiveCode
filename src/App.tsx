@@ -34,7 +34,7 @@ function App() {
             {/* </div> */}
             <span className="text-brand text-text">LiveCode</span>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex max-w-full flex-wrap items-center gap-3">
             <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
             <div className="flex items-center gap-2">
               <LanguageSwitcher />
