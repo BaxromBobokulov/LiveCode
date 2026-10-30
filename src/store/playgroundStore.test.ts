@@ -64,6 +64,24 @@ describe('playgroundStore run / reset', () => {
   })
 })
 
+
+  it('flags the Input field only when a Run ran out of scanf values', () => {
+    const readsOne = lines('int main() {', '    int a;', '    scanf("%d", &a);', '    return 0;', '}')
+    store.getState().setCode(readsOne)
+    store.getState().run()
+    expect(store.getState().runError?.text.key).toBe('codeError.scanfNoInput')
+    expect(store.getState().inputMissing).toBe(true)
+
+    store.getState().setInput('abc')
+    store.getState().run()
+    expect(store.getState().runError).toBeInstanceOf(CodeError)
+    expect(store.getState().inputMissing).toBe(false)
+
+    store.getState().setCode(broken)
+    store.getState().run()
+    expect(store.getState().runError).toBeInstanceOf(CodeError)
+    expect(store.getState().inputMissing).toBe(false)
+  })
 describe('playgroundStore stale trace', () => {
   beforeEach(() => store.setState(store.getInitialState(), true))
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { examples } from '../data/examples'
 import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
-import { CodeError, UnsupportedConstructError, constructName, isMissingInput } from './errors'
+import { CodeError, UnsupportedConstructError, constructName, isMissingInput, missingInputPhrase } from './errors'
 import { MAX_STEPS, runUserCode } from './interpreter'
 import type { Step } from './types'
 
@@ -342,6 +342,30 @@ describe('runUserCode', () => {
     expect(isMissingInput(errorFor(two, '1 x'))).toBe(false)
   })
 
+  it('says in every language that the Input field needs values, with an example', () => {
+    const result = runUserCode(lines('int main() {', '    int a;', '    scanf("%d", &a);', '    return 0;', '}'), '')
+    if (!('error' in result)) throw new Error('Expected an error')
+
+    const message = (language: keyof typeof translations) => formatPhrase(translations[language], result.error.text)
+    expect(message('en')).toContain('the Input field has 0 value(s)')
+    expect(message('uz')).toContain("Kiritish maydoniga yozing: scanf uchun qiymatlar, bo'sh joy bilan ajratilgan, masalan 5 2.5")
+    expect(message('ru')).toContain('в поле «Ввод» под редактором: значения для scanf через пробел, например 5 2.5')
+  })
+
+  it('finds the missing-input phrase only in a missing-input error', () => {
+    const errorFor = (source: string, input: string) => {
+      const result = runUserCode(source, input)
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error
+    }
+    const two = lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, &b);', '    return 0;', '}')
+
+    expect(missingInputPhrase(errorFor(two, '1'))).toEqual({ key: 'codeError.scanfNoInput', values: { needed: 2, given: 1 } })
+    expect(missingInputPhrase(errorFor(two, '1 x'))).toBeNull()
+    expect(missingInputPhrase(errorFor(lines('int main() {', '    int a = 1 / 0;', '}'), ''))).toBeNull()
+    expect(missingInputPhrase(errorFor(lines('int main() {', '    double d;', '}'), ''))).toBeNull()
+  })
+
   it('says which value of a scanf call failed', () => {
     const source = lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, &b);', '    return 0;', '}')
     const result = runUserCode(source, '1')
@@ -350,7 +374,7 @@ describe('runUserCode', () => {
     if (!('error' in result)) return
     expect(result.error.line).toBe(3)
     expect(formatPhrase(translations.en, result.error.text)).toMatch(
-      /^Value 2 of 2 in this scanf call: Not enough input values/,
+      /^Value 2 of 2 in this scanf call: The program is waiting for input from scanf/,
     )
 
     const missingAmpersand = runUserCode(lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, b);', '}'), '1 2')

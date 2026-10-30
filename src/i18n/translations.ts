@@ -228,7 +228,7 @@ const en = {
   'codeError.scanfValue': 'Value {position} of {count} in this scanf call: {problem}',
   'codeError.scanfAmpersand': 'scanf needs & before the variable it fills, e.g. scanf("%d", &{name}).',
   'codeError.scanfNoInput':
-    'Not enough input values: this scanf needs value number {needed}, but the Input field has only {given}. Enter one value per scanf, separated by spaces.',
+    'The program is waiting for input from scanf: this scanf needs value number {needed}, but the Input field has {given} value(s). Type them in the Input field under the editor: values for scanf, separated by spaces, e.g. 5 2.5.',
   'codeError.scanfIntIntoFloat': '%d reads an int, but {target} is a float. Use %f instead.',
   'codeError.scanfFloatIntoInt': '%f reads a float, but {target} is an int. Use %d instead.',
   'codeError.scanfNotInt': `"{value}" from the Input field is not a whole number, so %d can't read it.`,
@@ -456,6 +456,8 @@ const en = {
   'check.passedSome': '{passed} of {total} tests passed.',
   'check.casePassed': 'Test {number}: passed',
   'check.caseFailed': 'Test {number}: failed',
+  'check.scanfNoInput':
+    "Your program asks scanf for value number {needed}, but the test gives it {given} value(s). Check supplies each test's values itself, so the Input field doesn't change this: look for a scanf your program doesn't need, or a loop that reads too many times.",
   'check.runWithInput': 'Run with this input',
   'check.yourOutput': 'Your output',
   'check.expectedOutput': 'Expected output',
@@ -711,7 +713,7 @@ const uz: Record<TranslationKey, string> = {
   'codeError.scanfValue': 'Bu scanf chaqiruvidagi {count} ta qiymatdan {position}-qiymat: {problem}',
   'codeError.scanfAmpersand': `scanf to'ldiradigan o'zgaruvchi oldidan & kerak, masalan scanf("%d", &{name}).`,
   'codeError.scanfNoInput':
-    "Kiritilgan qiymatlar yetarli emas: bu scanf {needed}-qiymatni kutyapti, lekin Kiritish maydonida faqat {given} ta qiymat bor. Har bir scanf uchun bittadan qiymatni bo'sh joy bilan ajratib kiriting.",
+    "Dastur scanf orqali kiritishni kutyapti: bu scanf {needed}-qiymatni so'rayapti, lekin Kiritish maydonida {given} ta qiymat bor. Ularni muharrir ostidagi Kiritish maydoniga yozing: scanf uchun qiymatlar, bo'sh joy bilan ajratilgan, masalan 5 2.5.",
   'codeError.scanfIntIntoFloat': "%d int o'qiydi, lekin {target} float. Uning o'rniga %f dan foydalaning.",
   'codeError.scanfFloatIntoInt': "%f float o'qiydi, lekin {target} int. Uning o'rniga %d dan foydalaning.",
   'codeError.scanfNotInt': `Kiritish maydonidagi "{value}" butun son emas, shuning uchun %d uni o'qiy olmaydi.`,
@@ -951,6 +953,8 @@ const uz: Record<TranslationKey, string> = {
   'check.expectedOutput': 'Kutilgan natija',
   'check.noOutput': 'Hech narsa chiqarilmadi',
   'check.differentLine': '{line}-qator farq qiladi.',
+  'check.scanfNoInput':
+    "Dasturingiz scanf orqali {needed}-qiymatni so'rayapti, lekin test unga {given} ta qiymat beradi. Tekshirish har bir testning qiymatlarini o'zi beradi, shuning uchun Kiritish maydoni bunga ta'sir qilmaydi: keraksiz scanf yoki juda ko'p marta o'qiydigan siklni qidiring.",
   'check.stale': "Bu tekshiruvdan keyin kod o'zgardi. Yangi kodni sinash uchun Tekshirishni yana bosing.",
   'problem.question': 'Savolingiz bormi?',
   'problem.askTelegram': 'Telegram guruhga yozing',
@@ -1198,7 +1202,7 @@ const ru: Record<TranslationKey, string> = {
   'codeError.scanfValue': 'Значение {position} из {count} в этом вызове scanf: {problem}',
   'codeError.scanfAmpersand': 'scanf нужен & перед заполняемой переменной, например scanf("%d", &{name}).',
   'codeError.scanfNoInput':
-    'Недостаточно входных значений: этому scanf нужно значение номер {needed}, а в поле «Ввод» их только {given}. Введите по одному значению на каждый scanf через пробел.',
+    'Программа ждёт ввода через scanf: этому scanf нужно значение номер {needed}, а в поле «Ввод» значений: {given}. Введите их в поле «Ввод» под редактором: значения для scanf через пробел, например 5 2.5.',
   'codeError.scanfIntIntoFloat': '%d читает int, а {target} имеет тип float. Используйте %f.',
   'codeError.scanfFloatIntoInt': '%f читает float, а {target} имеет тип int. Используйте %d.',
   'codeError.scanfNotInt': '"{value}" из поля «Ввод» не целое число, поэтому %d не может его прочитать.',
@@ -1442,6 +1446,8 @@ const ru: Record<TranslationKey, string> = {
   'problem.askTelegram': 'Напишите в Telegram-группу',
   'link.newTab': '(откроется в новой вкладке)',
 
+  'check.scanfNoInput':
+    'Программа запрашивает через scanf значение номер {needed}, а тест даёт ей значений: {given}. «Проверить» подаёт значения каждого теста сам, поэтому поле «Ввод» здесь ни на что не влияет: поищите лишний scanf или цикл, который читает слишком много раз.',
   'badges.title': 'Значки',
   'badges.deviceOnly': 'Эти значки сохраняются только на этом устройстве.',
   'badges.unlocked': 'Получен',

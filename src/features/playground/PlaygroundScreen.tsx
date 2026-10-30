@@ -91,11 +91,16 @@ function PlaygroundScreen() {
     cancelScroll.current?.()
 
     // scanf ran out of values: show the user the Input field, on any screen size, and put the cursor in it.
+    // A maximized panel is restored first: it hides either the Input field or the error box that explains it.
+    const { inputMissing } = usePlaygroundStore.getState()
+    if (inputMissing) flushSync(() => setMaximized(null))
     const inputField = inputRef.current
-    if (usePlaygroundStore.getState().inputMissing && inputField) {
+    if (inputMissing && inputField) {
       inputField.focus({ preventScroll: true })
-      if (reduceMotion) inputField.scrollIntoView({ block: 'nearest' })
-      else cancelScroll.current = scrollToElement(inputField, 'center')
+      // Stacked, the error box is under the field: at the top of the screen, the field leaves room for it.
+      const stacked = layoutRef.current && getComputedStyle(layoutRef.current).flexDirection === 'column'
+      if (reduceMotion) inputField.scrollIntoView({ block: stacked ? 'start' : 'nearest' })
+      else cancelScroll.current = scrollToElement(inputField, stacked ? 'start' : 'center')
       return
     }
 

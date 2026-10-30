@@ -172,7 +172,7 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
             ref={inputRef}
             // Red while Run is waiting for values here; typing or a successful Run clears it.
             // The background stays bg-panel: the placeholder (textMuted) is under 4.5:1 on errorTint.
-            className={`h-9 min-w-0 flex-1 rounded-control border bg-panel px-3.5 font-mono text-body-sm text-text transition-colors placeholder:text-textMuted focus-visible:outline-2 ${
+            className={`h-9 min-w-0 flex-1 scroll-mt-4 rounded-control border bg-panel px-3.5 font-mono text-body-sm text-text transition-colors placeholder:text-textMuted focus-visible:outline-2 ${
               inputMissing ? 'border-error outline-2 outline-error' : 'border-borderStrong focus-visible:outline-accent'
             }`}
           />

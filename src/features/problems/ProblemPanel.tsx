@@ -3,7 +3,7 @@ import Button from '../../components/Button'
 import Chip from '../../components/Chip'
 import { TELEGRAM_GROUP_URL } from '../../constants/links'
 import type { Problem } from '../../data/problems/types'
-import { UnsupportedConstructError } from '../../engine/errors'
+import { UnsupportedConstructError, missingInputPhrase } from '../../engine/errors'
 import { useTranslation } from '../../i18n/useTranslation'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { BadgeIcon } from './Badges'
@@ -65,6 +65,9 @@ function InlineOutput({ output }: { output: string }) {
 function CaseDetails({ result, action }: { result: CaseResult; action?: ReactNode }) {
   const { t, phrase } = useTranslation()
   const { error } = result
+  // Check gives each test its own values and never reads the Input field, so Run's "type them in the
+  // Input field" would send the student to a field that can't help: the same case gets its own wording.
+  const missingInput = error && missingInputPhrase(error)
 
   return (
     <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-body-sm text-text">
@@ -76,7 +79,7 @@ function CaseDetails({ result, action }: { result: CaseResult; action?: ReactNod
               : t('error.codeError')}{' '}
             · {t('error.line', { line: error.line })}:
           </span>{' '}
-          {phrase(error.text)}
+          {phrase(missingInput ? { ...missingInput, key: 'check.scanfNoInput' } : error.text)}
         </span>
       ) : (
         <>

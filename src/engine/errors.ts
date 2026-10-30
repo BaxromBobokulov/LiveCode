@@ -63,13 +63,22 @@ export function scanfReadError(
   return new CodeError(line, 'codeError.scanfValue', { position, count, problem: { key, values } })
 }
 
+/**
+ * The `codeError.scanfNoInput` phrase of a program that read more values than it was given,
+ * also from inside a `codeError.scanfValue`. Null for any other error.
+ */
+export function missingInputPhrase(error: RunError): Phrase | null {
+  if (!(error instanceof CodeError)) return null
+  const { key, values } = error.text
+  if (key === 'codeError.scanfNoInput') return error.text
+  const problem = values?.problem
+  if (key !== 'codeError.scanfValue' || typeof problem !== 'object' || !('key' in problem)) return null
+  return problem.key === 'codeError.scanfNoInput' ? problem : null
+}
+
 /** Whether Run failed because the Input field had fewer values than the program's scanf calls read. */
 export function isMissingInput(error: RunError): boolean {
-  if (!(error instanceof CodeError)) return false
-  const { key, values } = error.text
-  if (key === 'codeError.scanfNoInput') return true
-  const problem = values?.problem
-  return key === 'codeError.scanfValue' && typeof problem === 'object' && 'key' in problem && problem.key === 'codeError.scanfNoInput'
+  return missingInputPhrase(error) !== null
 }
 
 /** A C keyword, operator or bit of code named as-is in every language, e.g. "goto" or "sqrt()". */

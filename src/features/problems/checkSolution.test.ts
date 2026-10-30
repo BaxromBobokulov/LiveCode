@@ -197,4 +197,9 @@ describe('checkSolution', () => {
     const result = checkSolution(countDigitsProblem, greedy)
     expect(result.cases.every((testCase) => testCase.error instanceof CodeError)).toBe(true)
   })
+
+  it('never runs out of input just because the Input field is empty: each test brings its own values', () => {
+    const result = checkSolution(countDigitsProblem, solutions.countDigits)
+    expect(result.cases.every((testCase) => testCase.error === null)).toBe(true)
+  })
 })
