@@ -5,9 +5,13 @@ import { countDigitsProblem } from '../../data/problems/countDigits'
 import { countdownProblem } from '../../data/problems/countdown'
 import { countPositivesProblem } from '../../data/problems/countPositives'
 import { discountProblem } from '../../data/problems/discount'
+import { halfOrTripleProblem } from '../../data/problems/halfOrTriple'
 import { largerOfTwoProblem } from '../../data/problems/largerOfTwo'
+import { largestDigitProblem } from '../../data/problems/largestDigit'
 import { largestElementProblem } from '../../data/problems/largestElement'
 import { rowSumsProblem } from '../../data/problems/rowSums'
+import { studentTotalsProblem } from '../../data/problems/studentTotals'
+import { sumOfEvensProblem } from '../../data/problems/sumOfEvens'
 import { sumToNProblem } from '../../data/problems/sumToN'
 import { timesTableProblem } from '../../data/problems/timesTable'
 import { CodeError, UnsupportedConstructError } from '../../engine/errors'
@@ -109,6 +113,10 @@ const solutions: Record<string, string> = {
   timesTable: timesTableProblem.starterCode!.join('\n').replace('n * i);', 'n * i);\n        i++;'),
   countPositives: countPositivesProblem.starterCode!.join('\n').replace('for (i = 1;', 'for (i = 0;'),
   largestElement: largestElementProblem.starterCode!.join('\n').replace('i <= 5', 'i < 5'),
+  sumOfEvens: sumOfEvensProblem.starterCode!.join('\n').replace('while (i <= n);', 'while (i <= n)'),
+  halfOrTriple: halfOrTripleProblem.starterCode!.join('\n').replace('if (n % 2 != 0)', 'else'),
+  largestDigit: largestDigitProblem.starterCode!.join('\n').replace('largest == digit', 'largest = digit'),
+  studentTotals: studentTotalsProblem.starterCode!.join('\n').replace(', total);', ', total);\n        total = 0;'),
 }
 
 describe('checkSolution', () => {
