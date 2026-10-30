@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
-import { getProblem } from '../data/problems'
+import { getProblem, problems } from '../data/problems'
 import type { Problem } from '../data/problems/types'
 import { UnsupportedConstructError, constructName, isMissingInput, type RunError } from '../engine/errors'
 import { runUserCode, usesScanf } from '../engine/interpreter'
 import { checkSolution, type CheckResult } from '../features/problems/checkSolution'
+import { pickRandomProblem } from '../features/problems/problemList'
 import { track } from '../lib/analytics'
 import { useBadgesStore, type BadgeId } from './badgesStore'
 import type { ExampleProgram } from '../engine/types'
@@ -38,12 +39,16 @@ type PlaygroundState = {
   checkedCode: string | null
   /** Badges the last Check unlocked, announced in its result box (usually none). */
   newBadges: BadgeId[]
+  /** The open problem came from "Random problem" with nothing left to solve; its panel says so. */
+  allProblemsSolved: boolean
 
   setTab: (tab: TabId) => void
   /** Load an example at its first step and switch to the Playground. */
   loadExample: (id: string) => void
   /** Open a problem in the Playground: its starter code (or an empty editor), and no trace until a Run. */
   loadProblem: (id: string) => void
+  /** Open a random problem the student hasn't passed yet, or any random one if all are passed. */
+  loadRandomProblem: () => void
   /** Run the editor's code against the open problem's test cases. Doesn't touch the trace. */
   check: () => void
   setCode: (code: string) => void
@@ -127,6 +132,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     checkResult: null,
     checkedCode: null,
     newBadges: [],
+    allProblemsSolved: false,
 
     // Leaving the Playground pauses auto play so it doesn't run unseen.
     setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
@@ -147,6 +153,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         checkResult: null,
         checkedCode: null,
         newBadges: [],
+        allProblemsSolved: false,
       }),
 
     loadProblem: (id) => {
@@ -168,7 +175,14 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         checkResult: null,
         checkedCode: null,
         newBadges: [],
+        allProblemsSolved: false,
       })
+    },
+
+    loadRandomProblem: () => {
+      const { problem, allSolved } = pickRandomProblem(problems, useBadgesStore.getState().passedProblems)
+      get().loadProblem(problem.id)
+      set({ allProblemsSolved: allSolved })
     },
 
     check: () => {
@@ -176,9 +190,9 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       const problem = problemId === null ? undefined : getProblem(problemId)
       if (!problem) return
       // No analytics here: a student's attempts and results are never sent anywhere.
-      // Badges are the one exception, kept in this browser's localStorage only (see badgesStore).
+      // Badges and passed problems are the one exception, kept in this browser's localStorage only (see badgesStore).
       const checkResult = checkSolution(problem, code)
-      const newBadges = checkResult.passed ? useBadgesStore.getState().recordPass() : []
+      const newBadges = checkResult.passed ? useBadgesStore.getState().recordPass(problem.id) : []
       set({ checkResult, checkedCode: code, newBadges })
     },
 

@@ -114,6 +114,7 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
   const checkResult = usePlaygroundStore((state) => state.checkResult)
   const checkedCode = usePlaygroundStore((state) => state.checkedCode)
   const newBadges = usePlaygroundStore((state) => state.newBadges)
+  const allProblemsSolved = usePlaygroundStore((state) => state.allProblemsSolved)
   const check = usePlaygroundStore((state) => state.check)
   const setTab = usePlaygroundStore((state) => state.setTab)
   const { t, locale } = useTranslation()
@@ -208,6 +209,17 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
       </header>
 
       <div className="flex flex-col gap-4 p-4.5">
+        {/* "Random problem" left the list to get here, so this is the one place the student can read why it's a solved one. */}
+        {allProblemsSolved && (
+          <p
+            role="status"
+            className="flex items-center gap-2 rounded-control border border-success bg-successTint px-3 py-2 text-body-md font-semibold text-text"
+          >
+            <ResultIcon passed />
+            {t('problems.allSolved')}
+          </p>
+        )}
+
         <div>
           <h3 className="mb-1.75 text-label text-textMuted">{t('problem.task')}</h3>
           <StatementText text={problem.statement[locale]} className="text-body-md text-text" />

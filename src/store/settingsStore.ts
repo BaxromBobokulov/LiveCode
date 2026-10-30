@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN } from '../constants/layout'
+import { problemTopics } from '../data/problems'
+import type { ProblemTopic } from '../data/problems/types'
 import { track } from '../lib/analytics'
 
 export type Theme = 'light' | 'dark'
@@ -15,7 +17,7 @@ const EXPLANATION_SIZE_DEFAULT = 15
 export const playbackSpeeds = [0.5, 1, 1.5, 2]
 const PLAYBACK_SPEED_DEFAULT = 1
 
-// Theme, language, the Playground split, the explanation text size and the Auto Play speed are the only preferences CodeVision saves between visits (badges are in badgesStore)
+// Theme, language, the Playground split, the explanation text size, the Auto Play speed and the folded Problems topics are the only preferences CodeVision saves between visits (badges are in badgesStore)
 // (AGENTS.md § State Management Rules).
 // index.html reads the same theme key before the first paint, so keep the two in sync.
 const THEME_KEY = 'codevision.theme'
@@ -23,6 +25,7 @@ const LOCALE_KEY = 'codevision.locale'
 const SPLIT_KEY = 'codevision.splitRatio'
 const EXPLANATION_SIZE_KEY = 'codevision.explanationSize'
 const PLAYBACK_SPEED_KEY = 'codevision.playbackSpeed'
+const COLLAPSED_TOPICS_KEY = 'codevision.collapsedTopics'
 
 // localStorage can throw (private mode, blocked site data), so reading and writing never break the app.
 function load(key: string): string | null {
@@ -79,6 +82,16 @@ function initialPlaybackSpeed(): number {
   return playbackSpeeds.includes(saved) ? saved : PLAYBACK_SPEED_DEFAULT
 }
 
+/** The saved folded Problems topics, or none on a first visit (or if what was saved can't be read). */
+function initialCollapsedTopics(): ProblemTopic[] {
+  try {
+    const saved: unknown = JSON.parse(load(COLLAPSED_TOPICS_KEY) ?? '[]')
+    return Array.isArray(saved) ? problemTopics.filter((topic) => saved.includes(topic)) : []
+  } catch {
+    return []
+  }
+}
+
 // src/theme/colors.css swaps every color token on this attribute.
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme
@@ -102,12 +115,15 @@ type SettingsState = {
   explanationSize: number
   /** Auto Play speed multiplier, one of playbackSpeeds. */
   playbackSpeed: number
+  /** The topic sections folded on the Problems screen. */
+  collapsedTopics: ProblemTopic[]
   toggleTheme: () => void
   setLocale: (locale: Locale) => void
   setSplitRatio: (ratio: number) => void
   /** Moves the explanation text one size up (+1) or down (-1), staying within explanationSizes. */
   stepExplanationSize: (direction: 1 | -1) => void
   setPlaybackSpeed: (speed: number) => void
+  toggleTopic: (topic: ProblemTopic) => void
 }
 
 export const useSettingsStore = create<SettingsState>()((set, get) => {
@@ -124,6 +140,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
     splitRatio: initialSplitRatio(),
     explanationSize,
     playbackSpeed: initialPlaybackSpeed(),
+    collapsedTopics: initialCollapsedTopics(),
 
     toggleTheme: () => {
       const next = get().theme === 'light' ? 'dark' : 'light'
@@ -159,6 +176,15 @@ export const useSettingsStore = create<SettingsState>()((set, get) => {
       if (!playbackSpeeds.includes(speed)) return
       save(PLAYBACK_SPEED_KEY, String(speed))
       set({ playbackSpeed: speed })
+    },
+
+    toggleTopic: (topic) => {
+      const { collapsedTopics } = get()
+      const next = collapsedTopics.includes(topic)
+        ? collapsedTopics.filter((collapsed) => collapsed !== topic)
+        : [...collapsedTopics, topic]
+      save(COLLAPSED_TOPICS_KEY, JSON.stringify(next))
+      set({ collapsedTopics: next })
     },
   }
 })

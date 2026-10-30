@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { problems } from '../data/problems'
 import { CodeError } from '../engine/errors'
+import { useBadgesStore } from './badgesStore'
 import { staleness, usePlaygroundStore } from './playgroundStore'
 
 const lines = (...code: string[]) => code.join('\n')
@@ -62,8 +64,6 @@ describe('playgroundStore run / reset', () => {
     store.getState().run()
     expect(store.getState().runError?.line).toBe(3)
   })
-})
-
 
   it('flags the Input field only when a Run ran out of scanf values', () => {
     const readsOne = lines('int main() {', '    int a;', '    scanf("%d", &a);', '    return 0;', '}')
@@ -82,6 +82,8 @@ describe('playgroundStore run / reset', () => {
     expect(store.getState().runError).toBeInstanceOf(CodeError)
     expect(store.getState().inputMissing).toBe(false)
   })
+})
+
 describe('playgroundStore stale trace', () => {
   beforeEach(() => store.setState(store.getInitialState(), true))
 
@@ -131,7 +133,10 @@ describe('playgroundStore stale trace', () => {
 })
 
 describe('playgroundStore problems', () => {
-  beforeEach(() => store.setState(store.getInitialState(), true))
+  beforeEach(() => {
+    store.setState(store.getInitialState(), true)
+    useBadgesStore.setState({ unlocked: [], passDays: [], passedProblems: [] })
+  })
 
   it('opens a problem in the Playground with its starter code and no trace yet', () => {
     store.getState().loadProblem('absoluteValue')
@@ -166,5 +171,35 @@ describe('playgroundStore problems', () => {
     store.getState().loadExample('max')
     expect(store.getState().problemId).toBeNull()
     expect(store.getState().checkResult).toBeNull()
+  })
+
+  it('remembers a problem only after a Check that fully passes', () => {
+    store.getState().loadProblem('absoluteValue')
+    store.getState().check()
+    expect(store.getState().checkResult?.passed).toBe(false)
+    expect(useBadgesStore.getState().passedProblems).toEqual([])
+
+    store.getState().setCode(store.getState().code.replace('scanf("%d", &n);', 'scanf("%d", &n);\n    if (n < 0) n = -n;'))
+    store.getState().check()
+    expect(useBadgesStore.getState().passedProblems).toEqual(['absoluteValue'])
+  })
+
+  it('opens an unsolved problem from "Random problem" while there is one', () => {
+    const lastId = problems[problems.length - 1].id
+    useBadgesStore.setState({ passedProblems: problems.slice(0, -1).map((problem) => problem.id) })
+    store.getState().loadRandomProblem()
+    expect(store.getState().problemId).toBe(lastId)
+    expect(store.getState().activeTab).toBe('playground')
+    expect(store.getState().allProblemsSolved).toBe(false)
+  })
+
+  it('still opens one from "Random problem" with all solved, says so, and forgets it on the next load', () => {
+    useBadgesStore.setState({ passedProblems: problems.map((problem) => problem.id) })
+    store.getState().loadRandomProblem()
+    expect(store.getState().problemId).not.toBeNull()
+    expect(store.getState().allProblemsSolved).toBe(true)
+
+    store.getState().loadProblem('absoluteValue')
+    expect(store.getState().allProblemsSolved).toBe(false)
   })
 })
