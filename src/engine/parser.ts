@@ -21,7 +21,7 @@ export type Expr =
   | { kind: 'unary'; line: number; op: '-' | '!'; operand: Expr }
   | { kind: 'binary'; line: number; op: BinaryOp; left: Expr; right: Expr }
   | { kind: 'call'; line: number; name: string; args: Expr[] }
-  /** A "text" literal. Only allowed where text is expected, e.g. as a printf or puts argument. */
+  /** A "text" literal. Only allowed where text is expected, e.g. as a printf, puts or strcmp argument. */
   | { kind: 'string'; line: number; value: string }
   /** `*p`: the variable the pointer `name` points to. Only a pointer's name can follow the `*`. */
   | { kind: 'deref'; line: number; name: string }
@@ -852,6 +852,8 @@ export function parse(source: string): Program {
     specifiers.forEach((specifier, i) => {
       const kind = args[i].kind
       // %s prints text: a "string" or a char array, named on its own (which one is checked when it runs).
+      const arg = args[i]
+      if (specifier === 's' && arg.kind === 'call' && writesText(arg.name)) throw stringResultError(line, arg.name)
       if (specifier === 's' && kind !== 'string' && kind !== 'var') throw new CodeError(line, 'codeError.printfS')
       if (specifier === 'p' && kind === 'string') throw new CodeError(line, 'codeError.printfPointer', { arg: toSource(args[i]) })
       if (specifier !== 's' && kind === 'string') throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
@@ -877,6 +879,7 @@ export function parse(source: string): Program {
     expect('(')
     const token = peek()
     const isArrayName = token.kind === 'identifier' && (is(')', 1) || is(';', 1))
+    if (token.kind === 'identifier' && is('(', 1) && writesText(token.text)) throw stringResultError(line, token.text)
     if (token.kind !== 'string' && !isArrayName) throw new CodeError(token.line, 'codeError.putsText')
     const arg = parseText()
     expect(')')
@@ -1025,8 +1028,8 @@ export function parse(source: string): Program {
         const args: Expr[] = []
         while (!is(')')) {
           if (args.length > 0) expect(',')
-          if (peek().kind === 'string') throw stringError(peek().line)
-          args.push(parseExpression())
+          // Only the <string.h> functions take a "string"; the interpreter rejects one anywhere else.
+          args.push(parseText())
         }
         expect(')')
         // `make().x` would need a function that returns a struct.
@@ -1090,6 +1093,14 @@ function tooManyDimensionsError(line: number): UnsupportedConstructError {
   return new UnsupportedConstructError(line, { key: 'construct.array3d' }, { key: 'unsupported.array3d' })
 }
 
-function stringError(line: number): UnsupportedConstructError {
+export function stringError(line: number): UnsupportedConstructError {
   return new UnsupportedConstructError(line, { key: 'construct.string' }, { key: 'unsupported.string' })
+}
+
+/** strcpy and strcat, which write into a char array. */
+export const writesText = (name: string) => name === 'strcpy' || name === 'strcat'
+
+/** Using what strcpy or strcat gives back, which would need a pointer into an array. */
+export function stringResultError(line: number, name: string): UnsupportedConstructError {
+  return new UnsupportedConstructError(line, { key: 'construct.stringResult', values: { name } }, { key: 'unsupported.stringResult', values: { name } })
 }

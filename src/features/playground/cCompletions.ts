@@ -124,6 +124,34 @@ const completions: Completion[] = [
     info: "tolower(c)  // tolower('A') is 'a'",
     apply: snippet('tolower(${})'),
   },
+  {
+    label: 'strlen',
+    type: 'function',
+    detail: 'strlen — how many characters a text has, not counting the \\0 (needs <string.h>)',
+    info: 'strlen(name)  // strlen("hi") is 2',
+    apply: snippet('strlen(${})'),
+  },
+  {
+    label: 'strcmp',
+    type: 'function',
+    detail: 'strcmp — compare two texts: 0 means they are the same (needs <string.h>)',
+    info: 'if (strcmp(a, b) == 0) { ... }',
+    apply: snippet('strcmp(${})'),
+  },
+  {
+    label: 'strcpy',
+    type: 'function',
+    detail: 'strcpy — copy a text into a char array (needs <string.h>)',
+    info: 'strcpy(dest, "hi");',
+    apply: snippet('strcpy(${});'),
+  },
+  {
+    label: 'strcat',
+    type: 'function',
+    detail: 'strcat — add a text to the end of a char array (needs <string.h>)',
+    info: 'strcat(dest, "!");',
+    apply: snippet('strcat(${});'),
+  },
 ]
 
 // Strings and comments are plain text to the program, so typing in them shouldn't pop up code suggestions.

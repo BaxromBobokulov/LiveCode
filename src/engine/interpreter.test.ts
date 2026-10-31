@@ -533,8 +533,288 @@ describe('runUserCode', () => {
     expect(error('    srand(time());').text.key).toBe('codeError.argCount')
     // The rest of <stdlib.h> is still not supported.
     expect(error('    int n = atoi(5);').text).toEqual({ key: 'unsupported.libraryFunction', values: { name: 'atoi' } })
-    expect(runUserCode('#include <string.h>\nint main() { return 0; }')).toMatchObject({
+    expect(runUserCode('#include <math.h>\nint main() { return 0; }')).toMatchObject({
       error: { text: { key: 'unsupported.include' } },
+    })
+  })
+
+  describe('<string.h>', () => {
+    const main = (...body: string[]) => lines('#include <string.h>', 'int main() {', ...body, '    return 0;', '}')
+    /** What main's body prints. */
+    const printed = (...body: string[]) => stepsOf(main(...body)).at(-1)!.output
+    /** The error that stops main's body. */
+    const error = (...body: string[]) => {
+      const result = runUserCode(main(...body))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error
+    }
+    const sign = (...body: string[]) => Math.sign(Number(printed(...body)))
+
+    describe('strlen', () => {
+      it('counts the characters before the \\0, not the array size', () => {
+        expect(printed('    char s[20] = "hello";', '    printf("%d", strlen(s));')).toBe('5')
+      })
+
+      it('gives 0 for empty text', () => {
+        expect(printed('    char s[5];', '    printf("%d", strlen(s));')).toBe('0')
+        expect(printed('    printf("%d", strlen(""));')).toBe('0')
+      })
+
+      it('stops at the first \\0 of a text with one in the middle', () => {
+        expect(printed('    char s[] = "ab\\0cd";', '    printf("%d", strlen(s));')).toBe('2')
+        expect(printed('    printf("%d", strlen("ab\\0cd"));')).toBe('2')
+      })
+
+      it('works in a loop condition and explains each call', () => {
+        const steps = stepsOf(main('    char s[] = "hi";', '    for (int i = 0; i < strlen(s); i++) {', '        printf("%c", s[i]);', '    }'))
+        expect(steps.at(-1)!.output).toBe('hi')
+        expect(english(steps[1])).toContain('strlen("hi") gives 2: the number of characters before the \\0.')
+      })
+
+      it('shows the array it read and a lone call as its own step', () => {
+        const steps = stepsOf(main('    int n = 1;', '    char s[] = "ab";', '    strlen(s);'))
+        expect(steps[2].line).toBe(5)
+        expect(steps[2].array).toMatchObject({ name: 's', activeIndex: null, chars: true })
+        expect(english(steps[2])).toContain('Work out strlen(s) (2). The result is not stored anywhere.')
+      })
+    })
+
+    describe('strcmp', () => {
+      it('gives 0 for equal text, wherever it is stored', () => {
+        expect(printed('    char a[] = "cat";', '    char b[10] = "cat";', '    printf("%d", strcmp(a, b));')).toBe('0')
+        expect(printed('    char a[] = "cat";', '    printf("%d", strcmp(a, "cat"));')).toBe('0')
+        expect(printed('    printf("%d", strcmp("", ""));')).toBe('0')
+      })
+
+      it('gives the difference of the first characters that differ', () => {
+        expect(printed('    printf("%d", strcmp("cat", "car"));')).toBe('2')
+        expect(printed('    printf("%d", strcmp("car", "cat"));')).toBe('-2')
+        expect(printed('    printf("%d", strcmp("a", "A"));')).toBe('32') // Upper and lower case differ.
+      })
+
+      it('puts shorter text first when it is the start of the longer one', () => {
+        expect(sign('    printf("%d", strcmp("ab", "abc"));')).toBe(-1)
+        expect(sign('    printf("%d", strcmp("abc", "ab"));')).toBe(1)
+        expect(sign('    printf("%d", strcmp("", "a"));')).toBe(-1)
+      })
+
+      it('compares characters as unsigned, as C does', () => {
+        expect(printed('    char a[2];', '    a[0] = 200;', '    printf("%d", strcmp(a, "a"));')).toBe(String(200 - 97))
+      })
+
+      it('explains where the texts differ', () => {
+        const steps = stepsOf(main('    int r = strcmp("cat", "car");', '    int s = strcmp("ab", "abc");', '    int t = strcmp("a", "a");'))
+        expect(english(steps[0])).toContain(`strcmp("cat", "car") gives 2: the texts first differ at index 2, and 't' (code 116) - 'r' (code 114) = 2.`)
+        expect(english(steps[1])).toContain(`the texts first differ at index 2, and '\\0' (code 0) - 'c' (code 99) = -99.`)
+        expect(english(steps[2])).toContain('strcmp("a", "a") gives 0: the two texts are the same.')
+      })
+
+      it('works as an if condition', () => {
+        const body = (word: string) => [`    char s[] = "${word}";`, '    if (strcmp(s, "yes") == 0) {', '        puts("Y");', '    } else {', '        puts("N");', '    }']
+        expect(printed(...body('yes'))).toBe('Y\n')
+        expect(printed(...body('no'))).toBe('N\n')
+      })
+    })
+
+    describe('strcpy', () => {
+      it('copies a string or another array into dest', () => {
+        expect(printed('    char d[10];', '    strcpy(d, "hi");', '    puts(d);')).toBe('hi\n')
+        expect(printed('    char s[] = "hey";', '    char d[10];', '    strcpy(d, s);', '    puts(d);')).toBe('hey\n')
+      })
+
+      it('makes dest empty when copying empty text', () => {
+        expect(printed('    char d[5] = "abc";', '    strcpy(d, "");', '    printf("[%s]", d);')).toBe('[]')
+      })
+
+      it('fits exactly when dest has room for the \\0, with no room to spare', () => {
+        expect(printed('    char d[3];', '    strcpy(d, "hi");', '    puts(d);')).toBe('hi\n')
+      })
+
+      it('leaves dest separate from the source afterwards', () => {
+        expect(printed('    char s[] = "ab";', '    char d[3];', '    strcpy(d, s);', "    s[0] = 'x';", '    puts(d);')).toBe('ab\n')
+      })
+
+      it('keeps what was after the new \\0, as C does', () => {
+        const steps = stepsOf(main('    char d[6] = "hello";', '    strcpy(d, "hi");'))
+        expect(steps[1].array).toMatchObject({ values: [104, 105, 0, 108, 111, 0] }) // h i \0 l o \0
+        expect(steps[1].variables).toContainEqual({ name: 'd', value: '"hi"' })
+      })
+
+      it('shows the write through the Variables panel and the array view, one step for the call', () => {
+        const steps = stepsOf(main('    char d[4] = "abc";', '    strcpy(d, "xy");', '    puts(d);'))
+        expect(steps.map((s) => s.line)).toEqual([3, 4, 5, 6])
+
+        expect(steps[0].variables).toContainEqual({ name: 'd', value: '"abc"' })
+        expect(steps[1].changed).toEqual(['d'])
+        expect(steps[1].variables).toContainEqual({ name: 'd', value: '"xy"' })
+        expect(steps[1].array).toEqual({ name: 'd', values: [120, 121, 0, 0], activeIndex: null, chars: true })
+        expect(english(steps[1])).toBe('Copy "xy" into d: 2 characters, then \\0 to mark where the text ends.')
+        // Stepping back shows the earlier step as it was.
+        expect(steps[0].array).toMatchObject({ values: [97, 98, 99, 0] })
+      })
+
+      it('looks like the same write done with s[i] = ...', () => {
+        const last = (...body: string[]) => stepsOf(main(...body)).at(-1)!
+        const byHand = last('    char d[3];', "    d[0] = 'h';", "    d[1] = 'i';", "    d[2] = '\\0';")
+        const copied = last('    char d[3];', '    strcpy(d, "hi");')
+        expect(copied.variables).toEqual(byHand.variables)
+        expect(copied.array).toMatchObject({ name: 'd', values: (byHand.array as { values: number[] }).values, chars: true })
+      })
+
+      it('changes the caller\'s array through a parameter', () => {
+        const source = lines(
+          'void fill(char s[]) {',
+          '    strcpy(s, "new");',
+          '}',
+          'int main() {',
+          '    char d[5] = "old";',
+          '    fill(d);',
+          '    puts(d);',
+          '    return 0;',
+          '}',
+        )
+        const steps = stepsOf(source)
+        expect(steps.find((s) => s.line === 2)).toMatchObject({ changed: ['s'], scope: 'fill()', array: { name: 's', values: [110, 101, 119, 0, 0] } })
+        expect(steps.at(-1)!.output).toBe('new\n')
+      })
+
+      it('shows the array written when it is the first thing in a loop body', () => {
+        const steps = stepsOf(main('    char a[3];', '    char b[3];', '    for (int i = 0; i < 1; i++) {', '        strcpy(b, "x");', '    }'))
+        expect(steps.find((s) => s.line === 6)).toMatchObject({ array: { name: 'b', values: [120, 0, 0] } })
+      })
+    })
+
+    describe('strcat', () => {
+      it('appends onto text that is already there', () => {
+        expect(printed('    char d[10] = "ab";', '    strcat(d, "cd");', '    puts(d);')).toBe('abcd\n')
+        expect(printed('    char d[10] = "ab";', '    char s[] = "cd";', '    strcat(d, s);', '    puts(d);')).toBe('abcd\n')
+      })
+
+      it('appends onto empty text, and appending nothing changes nothing', () => {
+        expect(printed('    char d[5];', '    strcat(d, "hi");', '    puts(d);')).toBe('hi\n')
+        expect(printed('    char d[5] = "hi";', '    strcat(d, "");', '    puts(d);')).toBe('hi\n')
+      })
+
+      it('adds up over several calls, filling dest exactly', () => {
+        expect(printed('    char d[4] = "a";', '    strcat(d, "b");', '    strcat(d, "c");', '    puts(d);')).toBe('abc\n')
+      })
+
+      it('starts at dest\'s first \\0 and overwrites what is after it', () => {
+        const steps = stepsOf(main('    char d[6] = "hello";', "    d[1] = '\\0';", '    strcat(d, "XY");'))
+        expect(steps[2].array).toMatchObject({ values: [104, 88, 89, 0, 111, 0] }) // h X Y \0 o \0
+      })
+
+      it('shows the write through the Variables panel and the array view', () => {
+        const steps = stepsOf(main('    char d[5] = "ab";', '    strcat(d, "c");'))
+        expect(steps[1].changed).toEqual(['d'])
+        expect(steps[1].variables).toContainEqual({ name: 'd', value: '"abc"' })
+        expect(steps[1].array).toEqual({ name: 'd', values: [97, 98, 99, 0, 0], activeIndex: null, chars: true })
+        expect(english(steps[1])).toBe('Add "c" to the end of d, starting at index 2, where its \\0 was. d now holds "abc": 3 characters, then \\0.')
+      })
+
+      it('appends a copy of the text when dest and source are the same array', () => {
+        expect(printed('    char d[10] = "ab";', '    strcat(d, d);', '    puts(d);')).toBe('abab\n')
+      })
+    })
+
+    it('works without #include <string.h>, like the other headers', () => {
+      expect(stepsOf(lines('int main() {', '    printf("%d", strlen("hi"));', '    return 0;', '}')).at(-1)!.output).toBe('2')
+    })
+
+    it('reports dest without room for the text and its \\0 instead of growing the array', () => {
+      expect(error('    char d[2];', '    strcpy(d, "hi");')).toMatchObject({
+        line: 4,
+        text: { key: 'codeError.stringNoRoom', values: { fn: 'strcpy', needed: 3, count: 2, name: 'd', size: 2 } },
+      })
+      expect(error('    char d[4] = "abc";', '    strcat(d, "d");').text).toEqual({
+        key: 'codeError.stringNoRoom',
+        values: { fn: 'strcat', needed: 5, count: 4, name: 'd', size: 4 },
+      })
+    })
+
+    it('reports text with no \\0 to find the end of', () => {
+      const full = "    char s[2] = {'h', 'i'};"
+      expect(error(full, '    int n = strlen(s);').text.key).toBe('codeError.noTerminator')
+      expect(error(full, '    strcat(s, "x");').text.key).toBe('codeError.noTerminator')
+      expect(error(full, '    char d[5];', '    strcpy(d, s);').text.key).toBe('codeError.noTerminator')
+    })
+
+    it('rejects a wrong call', () => {
+      expect(error('    int n = strlen();').text).toEqual({ key: 'codeError.argCount', values: { name: 'strlen', expected: 1, given: 0 } })
+      expect(error('    int n = strcmp("a");').text.key).toBe('codeError.argCount')
+      expect(error('    char d[3];', '    strcpy(d);').text.key).toBe('codeError.argCount')
+      expect(error('    int n = strlen(s);').text.key).toBe('codeError.notDeclared')
+      expect(error('    int x = 5;', '    int n = strlen(x);').text).toEqual({ key: 'codeError.stringArg', values: { fn: 'strlen' } })
+      expect(error('    int a[3];', '    int n = strcmp(a, "x");').text.key).toBe('codeError.stringArg')
+      expect(error("    char s[] = \"a\";", '    int n = strlen(s[0]);').text.key).toBe('codeError.stringArg')
+      expect(error('    char g[2][3];', '    int n = strlen(g);').text.key).toBe('codeError.stringArg')
+    })
+
+    it('needs a char array to write into', () => {
+      expect(error('    strcpy("abc", "x");').text).toEqual({ key: 'codeError.stringDest', values: { fn: 'strcpy' } })
+      expect(error('    int x = 5;', '    strcat(x, "x");').text.key).toBe('codeError.stringDest')
+      expect(error('    int a[3];', '    strcpy(a, "x");').text.key).toBe('codeError.stringDest')
+      expect(error('    char d[3];', '    strcpy(d, 5);').text.key).toBe('codeError.stringArg')
+    })
+
+    it('only takes plain ASCII text, like the rest of the engine', () => {
+      expect(error('    int n = strlen("é");').text.key).toBe('codeError.nonAsciiChar')
+    })
+
+    it("reports strcpy's and strcat's result as not supported, not as the student's mistake", () => {
+      const resultError = (name: string) => ({ key: 'unsupported.stringResult', values: { name } })
+      expect(error('    char d[5];', '    int x = strcpy(d, "a");').text).toEqual(resultError('strcpy'))
+      expect(error('    char d[5];', '    printf("%s", strcat(d, "a"));').text).toEqual(resultError('strcat'))
+      expect(error('    char d[5];', '    puts(strcpy(d, "a"));').text).toEqual(resultError('strcpy'))
+      expect(error('    char a[5];', '    char b[5];', '    strcat(strcpy(a, "x"), b);').text).toEqual(resultError('strcpy'))
+      expect(error('    char d[5];', '    int n = strlen(strcpy(d, "a"));').text).toEqual(resultError('strcpy'))
+      expect(error('    char d[5];', '    for (strcpy(d, "a"); 0; ) {', '    }').text).toEqual(resultError('strcpy'))
+
+      const failure = error('    char d[5];', '    int x = strcpy(d, "a");')
+      expect(failure).toBeInstanceOf(UnsupportedConstructError)
+      expect(constructName(failure as UnsupportedConstructError)).toBe('stringResult strcpy')
+    })
+
+    it('reports a pointer into an array as not supported', () => {
+      expect(error('    char s[] = "abc";', '    int n = strlen(s + 1);').text.key).toBe('unsupported.pointerArithmetic')
+      expect(error('    char s[5];', '    strcpy(s + 1, "a");').text.key).toBe('unsupported.pointerArithmetic')
+    })
+
+    it("lets a student's own function of the same name win", () => {
+      const source = (type: string, name: string) =>
+        lines(`${type} ${name}(char s[]) {`, '    int i = 0;', "    while (s[i] != '\\0') {", '        i++;', '    }', '    return i + 100;', '}', 'int main() {', '    char s[] = "hi";', `    printf("%d", ${name}(s));`, '    return 0;', '}')
+      expect(stepsOf(source('int', 'strlen')).at(-1)!.output).toBe('102')
+    })
+
+    it('still rejects a "string" passed to any other function', () => {
+      const source = lines('void greet(char s[]) {', '    puts(s);', '}', 'int main() {', '    greet("hi");', '    return 0;', '}')
+      expect(runUserCode(source)).toMatchObject({ error: { text: { key: 'unsupported.string' } } })
+      expect(error('    int x = isdigit("7");').text.key).toBe('unsupported.string')
+      expect(error('    int x = foo("7");').text.key).toBe('codeError.noFunction')
+    })
+
+    it.each([
+      ['strncmp', '    int x = strncmp("a", "b", 1);'],
+      ['strncpy', '    char d[3]; strncpy(d, "a", 1);'],
+      ['strchr', "    strchr(\"a\", 'a');"],
+      ['strstr', '    strstr("a", "b");'],
+      ['strtok', '    strtok("a", " ");'],
+      ['memcpy', '    char d[3]; memcpy(d, "a", 1);'],
+      ['memset', '    char d[3]; memset(d, 0, 3);'],
+      ['sprintf', '    char d[3]; sprintf(d, "%d", 1);'],
+      ['snprintf', '    char d[3]; snprintf(d, 3, "%d", 1);'],
+    ])('reports %s as not supported yet', (name, line) => {
+      const failure = error(line)
+      expect(failure.text).toEqual({ key: 'unsupported.libraryFunction', values: { name } })
+      expect(constructName(failure as UnsupportedConstructError)).toBe(`${name}()`)
+    })
+
+    it('explains every call in Uzbek and Russian too', () => {
+      const steps = stepsOf(main('    char d[5] = "ab";', '    int n = strlen(d);', '    int r = strcmp("a", "b");', '    int s = strcmp("a", "a");', '    strcpy(d, "c");', '    strcat(d, "d");'))
+      for (const language of [translations.uz, translations.ru]) {
+        const shown = steps.flatMap((step) => step.explanation).map((p) => formatPhrase(language, p))
+        expect(shown.filter((text) => /\{\w+\}/.test(text))).toEqual([])
+      }
     })
   })
 

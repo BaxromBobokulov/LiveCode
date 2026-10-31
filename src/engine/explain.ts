@@ -30,6 +30,14 @@ export type StepFact =
   | { kind: 'ctypeTest'; call: string; arg: string; passed: boolean; what: Phrase }
   /** A toupper() or tolower() call worked out while running this line. `what` names the only characters it changes. */
   | { kind: 'ctypeConvert'; call: string; arg: string; result: string; code: number; changed: boolean; what: Phrase }
+  /** A strlen() call worked out while running this line. */
+  | { kind: 'strlen'; call: string; count: number }
+  /** A strcmp() call worked out while running this line. `index` is where the texts first differ, unless `result` is 0. */
+  | { kind: 'strcmp'; call: string; result: number; index: number; first: string; firstCode: number; second: string; secondCode: number }
+  /** strcpy() stored `text` in the char array `name`. */
+  | { kind: 'strcpy'; name: string; text: string; count: number }
+  /** strcat() added `text` to the char array `name`, from index `start`. `result` and `count` describe all its text now. */
+  | { kind: 'strcat'; name: string; text: string; start: number; result: string; count: number }
   /**
    * A sizeof worked out while running this line: `size` bytes of `type`. `count` is set when it measured a
    * whole array, or one row of a 2D array (`isRow`): that many elements of `type`.
@@ -217,6 +225,32 @@ export function explain(fact: StepFact): Phrase[] {
     case 'ctypeConvert':
       if (fact.changed) return [{ key: 'explain.ctypeChanged', values: { call: fact.call, result: fact.result, code: fact.code } }]
       return [{ key: 'explain.ctypeSame', values: { call: fact.call, arg: fact.arg, code: fact.code, what: fact.what } }]
+
+    case 'strlen':
+      return [{ key: 'explain.strlen', values: { call: fact.call, count: fact.count } }]
+
+    case 'strcmp':
+      if (fact.result === 0) return [{ key: 'explain.strcmpSame', values: { call: fact.call } }]
+      return [
+        {
+          key: 'explain.strcmpDiffer',
+          values: {
+            call: fact.call,
+            result: fact.result,
+            index: fact.index,
+            first: fact.first,
+            firstCode: fact.firstCode,
+            second: fact.second,
+            secondCode: fact.secondCode,
+          },
+        },
+      ]
+
+    case 'strcpy':
+      return [{ key: 'explain.strcpy', values: { name: fact.name, text: fact.text, count: fact.count } }]
+
+    case 'strcat':
+      return [{ key: 'explain.strcat', values: { name: fact.name, text: fact.text, start: fact.start, result: fact.result, count: fact.count } }]
 
     case 'time':
       return [{ key: 'explain.time', values: { value: fact.value } }]

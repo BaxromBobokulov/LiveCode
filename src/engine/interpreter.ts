@@ -8,7 +8,10 @@ import {
   pointerError,
   quoteText,
   sizeofError,
+  stringError,
+  stringResultError,
   toSource,
+  writesText,
   type BinaryOp,
   type Declarator,
   type Expr,
@@ -51,7 +54,7 @@ const MAX_ARRAY_SIZE = 100
 const libraryFunctions = new Set([
   'putchar', 'getchar', 'gets', 'fgets', 'fprintf', 'sprintf',
   'malloc', 'calloc', 'realloc', 'free', 'exit', 'abs', 'atoi',
-  'strlen', 'strcpy', 'strcat', 'strcmp', 'memset', 'memcpy',
+  'strncmp', 'strncpy', 'strchr', 'strstr', 'strtok', 'memset', 'memcpy', 'snprintf',
   'sqrt', 'pow', 'fabs', 'floor', 'ceil', 'sin', 'cos', 'tan', 'log', 'exp',
   'isalnum', 'ispunct', 'isxdigit', 'isprint', 'isgraph', 'iscntrl', 'isblank',
 ])
@@ -78,6 +81,12 @@ const ctypeConversions = new Map<string, { applies: (c: number) => boolean; dist
 ])
 
 const isCtypeFunction = (name: string) => ctypeTests.has(name) || ctypeConversions.has(name)
+
+/** The <string.h> functions that give a value. strcpy and strcat write into a char array instead. */
+const givesStringValue = (name: string) => name === 'strlen' || name === 'strcmp'
+
+/** A character's code as strcmp compares it, which is as an unsigned char. Past the end of the text is the \0. */
+const compareCode = (text: string, index: number) => (text.charCodeAt(index) || 0) & 0xff
 
 /** `ended` is set once the block that declared the variable is over, so a pointer to it can't be followed. */
 type Scalar = { kind: 'scalar'; type: NumType; value: number | null; address: number; ended?: true }
@@ -413,6 +422,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       if (expr.name === 'rand' || expr.name === 'srand') return evaluateRandomCall(expr)
       if (expr.name === 'time') return evaluateTime(expr)
       if (isCtypeFunction(expr.name)) return evaluateCtype(expr)
+      if (givesStringValue(expr.name) || writesText(expr.name)) return evaluateString(expr)
       if (libraryFunctions.has(expr.name)) {
         throw new UnsupportedConstructError(
           expr.line,
@@ -422,6 +432,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
       }
       throw new CodeError(expr.line, 'codeError.noFunction', { name: expr.name })
     }
+    const text = expr.args.find((arg) => arg.kind === 'string')
+    if (text) throw stringError(text.line)
     if (frames.some((f) => f.fn === fn)) {
       throw new UnsupportedConstructError(
         expr.line,
@@ -556,6 +568,103 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const value = changed ? c + conversion.distance : c
     cellReads.push({ kind: 'ctypeConvert', call, arg, result: formatNumber(value, 'char'), code: value, changed, what: conversion.what })
     return { type: 'int', value, work: String(value) }
+  }
+
+  /** Whether this is the real strcpy or strcat, not a function of the student's with the same name. */
+  function isTextWriter(name: string): boolean {
+    return writesText(name) && !program.functions.has(name)
+  }
+
+  /**
+   * A <string.h> function. strlen and strcmp give an int, and each call adds a note to its line's
+   * explanation, like the <ctype.h> functions. strcpy and strcat give nothing here: they get their own step.
+   */
+  function evaluateString(expr: Extract<Expr, { kind: 'call' }>): Value | null {
+    const expected = expr.name === 'strlen' ? 1 : 2
+    if (expr.args.length !== expected) {
+      throw new CodeError(expr.line, 'codeError.argCount', { name: expr.name, expected, given: expr.args.length })
+    }
+    if (writesText(expr.name)) {
+      writeText(expr)
+      return null
+    }
+
+    const first = textArgument(expr.name, expr.args[0])
+    if (expr.name === 'strlen') {
+      cellReads.push({ kind: 'strlen', call: `strlen(${quoteText(first)})`, count: first.length })
+      return { type: 'int', value: first.length, work: String(first.length) }
+    }
+
+    const second = textArgument(expr.name, expr.args[1])
+    let index = 0
+    while (index < first.length && first[index] === second[index]) index++
+    const firstCode = compareCode(first, index)
+    const secondCode = compareCode(second, index)
+    const value = firstCode - secondCode
+    cellReads.push({
+      kind: 'strcmp',
+      call: `strcmp(${quoteText(first)}, ${quoteText(second)})`,
+      result: value,
+      index,
+      first: formatNumber(firstCode, 'char'),
+      firstCode,
+      second: formatNumber(secondCode, 'char'),
+      secondCode,
+    })
+    return { type: 'int', value, work: String(value) }
+  }
+
+  /**
+   * strcpy(dest, src) or strcat(dest, src). A whole-array write works like scanf("%s"): the characters go
+   * into the array's own values and the step names it in `changed`, so the Variables panel and the array
+   * view show the new text the same way as after `s[i] = 'a';`. What was in dest after the new \0 stays.
+   */
+  function writeText(expr: Extract<Expr, { kind: 'call' }>) {
+    const [dest, source] = expr.args
+    const notDest = () => new CodeError(expr.line, 'codeError.stringDest', { fn: expr.name })
+    rejectUnsupportedText(dest)
+    if (dest.kind !== 'var') throw notDest()
+    const name = dest.name
+    const store = lookup(name, dest.line)
+    if (store.kind !== 'array' || store.type !== 'char') throw notDest()
+
+    // The source is read first, so the text is the same even when both arguments are one array.
+    const text = textArgument(expr.name, source)
+    const start = expr.name === 'strcat' ? readText(name, expr.line, notDest).length : 0
+    const count = start + text.length
+    const size = store.values.length
+    if (count + 1 > size) {
+      throw new CodeError(expr.line, 'codeError.stringNoRoom', { fn: expr.name, needed: count + 1, count, name, size })
+    }
+    for (let i = 0; i < text.length; i++) store.values[start + i] = convert(text.charCodeAt(i), store.type)
+    store.values[count] = 0
+
+    access = { name, store, active: null }
+    const fact: StepFact =
+      expr.name === 'strcpy'
+        ? { kind: 'strcpy', name, text: quoteText(text), count }
+        : { kind: 'strcat', name, text: quoteText(text), start, result: quoteText(textOf(store.values) ?? ''), count }
+    emit(expr.line, fact, [name])
+  }
+
+  /** The text of a <string.h> argument: a "string", or a char array named on its own. */
+  function textArgument(fn: string, arg: Expr): string {
+    if (arg.kind === 'string') {
+      charCodes(arg.value, arg.line) // Checks that it is plain ASCII.
+      return arg.value
+    }
+    rejectUnsupportedText(arg)
+    const notText = () => new CodeError(arg.line, 'codeError.stringArg', { fn })
+    if (arg.kind !== 'var') throw notText()
+    return readText(arg.name, arg.line, notText)
+  }
+
+  /** Text arguments that are fine in real C but need a pointer into an array, which this version doesn't have. */
+  function rejectUnsupportedText(arg: Expr) {
+    if (arg.kind === 'call' && isTextWriter(arg.name)) throw stringResultError(arg.line, arg.name)
+    if (arg.kind === 'binary' && arg.left.kind === 'var' && findSlot(arg.left.name)?.kind === 'array') {
+      throw pointerError(arg.line, 'unsupported.pointerArithmetic')
+    }
   }
 
   /**
@@ -1149,6 +1258,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'call': {
         const result = evaluateCall(expr)
         if (!result) {
+          if (isTextWriter(expr.name)) throw stringResultError(expr.line, expr.name)
           throw new CodeError(expr.line, 'codeError.voidValue', { name: expr.name })
         }
         return result
@@ -1156,7 +1266,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       // The parser only lets a "string" through where text is expected, which never needs its value.
       case 'string':
-        throw new UnsupportedConstructError(expr.line, { key: 'construct.string' }, { key: 'unsupported.string' })
+        throw stringError(expr.line)
     }
   }
 
@@ -1255,11 +1365,12 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'expr':
         // A call on its own line, like `greet();`, is shown through its call and return steps
-        // (srand() records its own step). A lone `rand();` or `toupper(c);` has neither, so it falls
-        // through and is shown as an expression.
+        // (srand(), strcpy() and strcat() record their own step). A lone `rand();`, `toupper(c);` or
+        // `strlen(s);` has neither, so it falls through and is shown as an expression.
         if (
           stmt.expr.kind === 'call' &&
-          (program.functions.has(stmt.expr.name) || (stmt.expr.name !== 'rand' && !isCtypeFunction(stmt.expr.name)))
+          (program.functions.has(stmt.expr.name) ||
+            (stmt.expr.name !== 'rand' && !isCtypeFunction(stmt.expr.name) && !givesStringValue(stmt.expr.name)))
         ) {
           evaluateCall(stmt.expr)
           return null

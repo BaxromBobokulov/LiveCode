@@ -29,7 +29,7 @@ const punctuators = [
   '(', ')', '{', '}', '[', ']', ';', ',', '.',
 ]
 
-/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` / `<time.h>` / `<ctype.h>` are skipped. */
+/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` / `<time.h>` / `<ctype.h>` / `<string.h>` are skipped. */
 export function tokenize(source: string): Token[] {
   const tokens: Token[] = []
   let pos = 0
@@ -66,12 +66,12 @@ export function tokenize(source: string): Token[] {
       continue
     }
 
-    // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>`, `<time.h>` and `<ctype.h>` are allowed, and they are ignored.
+    // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>`, `<time.h>`, `<ctype.h>` and `<string.h>` are allowed, and they are ignored.
     // Only the directive itself is read here; the rest of the line goes through the loop as usual,
     // so spaces and comments after it are skipped like anywhere else.
     if (char === '#' && atLineStart) {
       const include = /^#[ \t]*include[ \t]*<([^>\n]*)>/.exec(source.slice(pos))
-      if (!include || !['stdio.h', 'stdlib.h', 'time.h', 'ctype.h'].includes(include[1])) {
+      if (!include || !['stdio.h', 'stdlib.h', 'time.h', 'ctype.h', 'string.h'].includes(include[1])) {
         let end = source.indexOf('\n', pos)
         if (end === -1) end = source.length
         const directive = source.slice(pos, end).trim()
