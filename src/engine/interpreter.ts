@@ -53,7 +53,31 @@ const libraryFunctions = new Set([
   'malloc', 'calloc', 'realloc', 'free', 'exit', 'abs', 'atoi',
   'strlen', 'strcpy', 'strcat', 'strcmp', 'memset', 'memcpy',
   'sqrt', 'pow', 'fabs', 'floor', 'ceil', 'sin', 'cos', 'tan', 'log', 'exp',
+  'isalnum', 'ispunct', 'isxdigit', 'isprint', 'isgraph', 'iscntrl', 'isblank',
 ])
+
+const isUpper = (c: number) => c >= 65 && c <= 90 // 'A' to 'Z'
+const isLower = (c: number) => c >= 97 && c <= 122 // 'a' to 'z'
+/** How far a lowercase letter's code is from its uppercase one: 'a' (97) - 'A' (65). */
+const CASE_DISTANCE = 32
+
+/** The <ctype.h> checks. `what` names what they look for, for the explanation. */
+const ctypeTests = new Map<string, { matches: (c: number) => boolean; what: Phrase }>([
+  ['isdigit', { matches: (c) => c >= 48 && c <= 57, what: { key: 'explain.ctypeDigit' } }], // '0' to '9'
+  ['isalpha', { matches: (c) => isUpper(c) || isLower(c), what: { key: 'explain.ctypeLetter' } }],
+  ['isupper', { matches: isUpper, what: { key: 'explain.ctypeUpper' } }],
+  ['islower', { matches: isLower, what: { key: 'explain.ctypeLower' } }],
+  // ' ', and \t \n \v \f \r, which are codes 9 to 13.
+  ['isspace', { matches: (c) => c === 32 || (c >= 9 && c <= 13), what: { key: 'explain.ctypeSpace' } }],
+])
+
+/** toupper() and tolower(). `what` names the only characters they change, for the explanation. */
+const ctypeConversions = new Map<string, { applies: (c: number) => boolean; distance: number; what: Phrase }>([
+  ['toupper', { applies: isLower, distance: -CASE_DISTANCE, what: { key: 'explain.ctypeLower' } }],
+  ['tolower', { applies: isUpper, distance: CASE_DISTANCE, what: { key: 'explain.ctypeUpper' } }],
+])
+
+const isCtypeFunction = (name: string) => ctypeTests.has(name) || ctypeConversions.has(name)
 
 /** `ended` is set once the block that declared the variable is over, so a pointer to it can't be followed. */
 type Scalar = { kind: 'scalar'; type: NumType; value: number | null; address: number; ended?: true }
@@ -388,6 +412,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     if (!fn) {
       if (expr.name === 'rand' || expr.name === 'srand') return evaluateRandomCall(expr)
       if (expr.name === 'time') return evaluateTime(expr)
+      if (isCtypeFunction(expr.name)) return evaluateCtype(expr)
       if (libraryFunctions.has(expr.name)) {
         throw new UnsupportedConstructError(
           expr.line,
@@ -502,6 +527,34 @@ export function execute(program: Program, input: string[] = []): Step[] {
     randomState = (Math.imul(randomState, 1103515245) + 12345) >>> 0
     const value = (randomState >>> 16) % (RAND_MAX + 1)
     cellReads.push({ kind: 'rand', value: String(value) })
+    return { type: 'int', value, work: String(value) }
+  }
+
+  /**
+   * A <ctype.h> function. It takes a character code and gives an int, as in C, so `toupper('a')` is 65:
+   * `%c` prints it as A, and storing it in a char shows 'A'. Checks give 1 or 0; real C only promises
+   * "not 0", but one fixed number is easier to follow in a trace.
+   */
+  function evaluateCtype(expr: Extract<Expr, { kind: 'call' }>): Value {
+    if (expr.args.length !== 1) {
+      throw new CodeError(expr.line, 'codeError.argCount', { name: expr.name, expected: 1, given: expr.args.length })
+    }
+    const c = convert(evaluate(expr.args[0]).value, 'int')
+    const arg = formatNumber(c, 'char')
+    const call = `${expr.name}(${arg})`
+
+    const test = ctypeTests.get(expr.name)
+    if (test) {
+      const passed = test.matches(c)
+      cellReads.push({ kind: 'ctypeTest', call, arg, passed, what: test.what })
+      const value = passed ? 1 : 0
+      return { type: 'int', value, work: String(value) }
+    }
+
+    const conversion = ctypeConversions.get(expr.name)!
+    const changed = conversion.applies(c)
+    const value = changed ? c + conversion.distance : c
+    cellReads.push({ kind: 'ctypeConvert', call, arg, result: formatNumber(value, 'char'), code: value, changed, what: conversion.what })
     return { type: 'int', value, work: String(value) }
   }
 
@@ -1202,8 +1255,12 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'expr':
         // A call on its own line, like `greet();`, is shown through its call and return steps
-        // (srand() records its own step). A lone `rand();` falls through and is shown as an expression.
-        if (stmt.expr.kind === 'call' && (stmt.expr.name !== 'rand' || program.functions.has('rand'))) {
+        // (srand() records its own step). A lone `rand();` or `toupper(c);` has neither, so it falls
+        // through and is shown as an expression.
+        if (
+          stmt.expr.kind === 'call' &&
+          (program.functions.has(stmt.expr.name) || (stmt.expr.name !== 'rand' && !isCtypeFunction(stmt.expr.name)))
+        ) {
           evaluateCall(stmt.expr)
           return null
         }

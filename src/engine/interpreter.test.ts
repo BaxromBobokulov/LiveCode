@@ -4,7 +4,7 @@ import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
 import { CodeError, UnsupportedConstructError, constructName, isMissingInput, missingInputPhrase } from './errors'
 import { MAX_STEPS, runUserCode } from './interpreter'
-import type { Step } from './types'
+import { charText, type Step } from './types'
 
 function stepsOf(source: string): Step[] {
   const result = runUserCode(source)
@@ -535,6 +535,248 @@ describe('runUserCode', () => {
     expect(error('    int n = atoi(5);').text).toEqual({ key: 'unsupported.libraryFunction', values: { name: 'atoi' } })
     expect(runUserCode('#include <string.h>\nint main() { return 0; }')).toMatchObject({
       error: { text: { key: 'unsupported.include' } },
+    })
+  })
+
+  describe('<ctype.h>', () => {
+    /** What main's body prints, with <ctype.h> included. */
+    const printed = (...body: string[]) =>
+      stepsOf(lines('#include <ctype.h>', 'int main() {', ...body, '    return 0;', '}')).at(-1)!.output
+
+    const error = (body: string) => {
+      const result = runUserCode(lines('int main() {', body, '    return 0;', '}'))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return result.error
+    }
+
+    it.each([
+      ["isdigit('7')", 1],
+      ["isdigit('0')", 1],
+      ["isdigit('9')", 1],
+      ["isdigit('a')", 0],
+      ["isdigit('/')", 0], // The characters just before '0' and after '9'.
+      ["isdigit(':')", 0],
+      ['isdigit(7)', 0], // The number 7 isn't the character '7'.
+      ["isalpha('q')", 1],
+      ["isalpha('Q')", 1],
+      ["isalpha('5')", 0],
+      ["isalpha('@')", 0], // The characters around the alphabets' ends.
+      ["isalpha('[')", 0],
+      ["isalpha('`')", 0],
+      ["isalpha('{')", 0],
+      ["isupper('A')", 1],
+      ["isupper('Z')", 1],
+      ["isupper('a')", 0],
+      ["isupper('1')", 0],
+      ["islower('a')", 1],
+      ["islower('z')", 1],
+      ["islower('A')", 0],
+      ["islower('1')", 0],
+      ["isspace(' ')", 1],
+      ["isspace('\\n')", 1],
+      ["isspace('\\t')", 1],
+      ["isspace('\\r')", 1],
+      ['isspace(9)', 1], // The code of '\t'.
+      ['isspace(13)', 1],
+      ['isspace(8)', 0],
+      ['isspace(14)', 0],
+      ["isspace('x')", 0],
+      ["isspace('\\0')", 0],
+    ])('%s gives %i', (call, expected) => {
+      expect(printed(`    printf("%d", ${call});`)).toBe(String(expected))
+    })
+
+    it.each([
+      ["toupper('a')", 'A'],
+      ["toupper('z')", 'Z'],
+      ["toupper('Q')", 'Q'], // Already uppercase.
+      ["toupper('5')", '5'], // Not a letter.
+      ["toupper('{')", '{'], // Right after 'z'.
+      ["tolower('A')", 'a'],
+      ["tolower('Z')", 'z'],
+      ["tolower('q')", 'q'],
+      ["tolower('!')", '!'],
+      ["tolower('[')", '['], // Right after 'Z'.
+    ])('%s gives %s', (call, expected) => {
+      expect(printed(`    printf("%c", ${call});`)).toBe(expected)
+    })
+
+    it('gives an int from toupper, as in C, which a char variable shows as a character', () => {
+      expect(printed(`    printf("%d", toupper('a'));`)).toBe('65')
+      expect(printed(`    printf("%d", toupper('a') + 1);`)).toBe('66')
+      expect(printed(`    printf("%d", toupper(300));`)).toBe('300')
+
+      const steps = stepsOf(lines('int main() {', "    char c = 'b';", '    char u = toupper(c);', '    return 0;', '}'))
+      expect(steps[1].variables).toContainEqual({ name: 'u', value: "'B'" })
+      expect(english(steps[1])).toBe("toupper('b') gives 'B' (code 66). Create u and set it to toupper(c): 66 = 'B'.")
+    })
+
+    it('explains the calls in every language', () => {
+      const steps = stepsOf(lines('int main() {', "    int a = isdigit('7');", "    int b = isdigit('x');", "    int c = toupper('a');", "    int d = toupper('5');", '    return 0;', '}'))
+      const shown = (language: 'uz' | 'ru') => steps.slice(0, 4).map((step) => formatPhrase(translations[language], step.explanation[0]))
+
+      expect(shown('ru')).toEqual([
+        "isdigit('7') выдаёт 1 (истина): '7' — цифра.",
+        "isdigit('x') выдаёт 0 (ложь): 'x' — не цифра.",
+        "toupper('a') выдаёт 'A' (код 65).",
+        "toupper('5') выдаёт '5' (код 53) без изменений: это не строчная буква.",
+      ])
+      expect(shown('uz')).toEqual([
+        "isdigit('7') 1 beradi (rost): '7' — raqam.",
+        "isdigit('x') 0 beradi (yolg'on): 'x' raqam emas.",
+        "toupper('a') 'A' beradi (kodi 65).",
+        "toupper('5') '5' ni (kodi 53) o'zgartirmasdan beradi: u kichik harf emas.",
+      ])
+    })
+
+    it('converts a float argument to an int, as C does', () => {
+      expect(printed('    printf("%d", isdigit(55.9));')).toBe('1')
+    })
+
+    it('works without #include <ctype.h>, like the other headers', () => {
+      expect(stepsOf(lines('int main() {', "    printf(\"%d\", isdigit('1'));", '    return 0;', '}')).at(-1)!.output).toBe('1')
+    })
+
+    it('runs in conditions and on a char array, explaining each call', () => {
+      const steps = stepsOf(
+        lines(
+          'int main() {',
+          '    char s[] = "aB";',
+          '    int i = 0;',
+          "    while (s[i] != '\\0') {",
+          '        if (islower(s[i])) {',
+          '            s[i] = toupper(s[i]);',
+          '        } else {',
+          '            s[i] = tolower(s[i]);',
+          '        }',
+          '        i++;',
+          '    }',
+          '    puts(s);',
+          '    return 0;',
+          '}',
+        ),
+      )
+
+      expect(steps.at(-1)!.output).toBe('Ab\n')
+      const explanations = steps.map(english)
+      expect(explanations.some((text) => text.startsWith("islower('a') gives 1 (true): 'a' is a lowercase letter."))).toBe(true)
+      expect(explanations.some((text) => text.startsWith("islower('B') gives 0 (false): 'B' is not a lowercase letter."))).toBe(true)
+    })
+
+    it('says when toupper leaves a character as it is', () => {
+      const steps = stepsOf(lines('int main() {', "    int c = toupper('5');", '    return 0;', '}'))
+      expect(english(steps[0])).toContain("toupper('5') gives '5' (code 53) unchanged: it is not a lowercase letter.")
+    })
+
+    it('shows a lone call as its own step, since it has no call or return step', () => {
+      const steps = stepsOf(lines('int main() {', "    toupper('a');", '    return 0;', '}'))
+      expect(steps).toHaveLength(2)
+      expect(steps[0].line).toBe(2)
+      expect(english(steps[0])).toContain("toupper('a') gives 'A' (code 65).")
+    })
+
+    it("lets a student's own function of the same name win", () => {
+      const source = lines(
+        'int isdigit(int c) {',
+        '    return 42;',
+        '}',
+        'int main() {',
+        "    printf(\"%d\", isdigit('a'));",
+        '    return 0;',
+        '}',
+      )
+      expect(stepsOf(source).at(-1)!.output).toBe('42')
+    })
+
+    it('rejects a wrong call', () => {
+      expect(error('    int x = isdigit();').text).toEqual({ key: 'codeError.argCount', values: { name: 'isdigit', expected: 1, given: 0 } })
+      expect(error("    int x = toupper('a', 'b');").text.key).toBe('codeError.argCount')
+      expect(error('    int c; int x = isdigit(c);').text.key).toBe('codeError.noValue')
+      expect(error('    int x = 1; int *p = &x; int y = isdigit(p);').text.key).toBe('codeError.pointerAsNumber')
+      expect(error('    int x = isdigit("7");').text.key).toBe('unsupported.string')
+      expect(error('    char s[] = "7"; int x = isdigit(s);').text.key).toBe('codeError.isArray')
+    })
+
+    it('still reports the rest of <ctype.h> as not supported', () => {
+      expect(error("    int x = isalnum('a');").text).toEqual({ key: 'unsupported.libraryFunction', values: { name: 'isalnum' } })
+    })
+  })
+
+  describe('escape sequences', () => {
+    const main = (...body: string[]) => lines('int main() {', ...body, '    return 0;', '}')
+    const output = (...body: string[]) => stepsOf(main(...body)).at(-1)!.output
+
+    it.each([
+      ['\\n', 10, "'\\n'"],
+      ['\\t', 9, "'\\t'"],
+      ['\\r', 13, "'\\r'"],
+      ['\\\\', 92, "'\\\\'"],
+      ["\\'", 39, "'\\''"],
+      ['\\"', 34, `'"'`],
+      ['\\0', 0, "'\\0'"],
+    ])("'%s' is code %i and is shown as %s", (escape, code, shown) => {
+      const steps = stepsOf(main(`    char c = '${escape}';`, '    printf("%d", c);'))
+      expect(steps[0].variables).toContainEqual({ name: 'c', value: shown })
+      expect(steps.at(-1)!.output).toBe(String(code))
+    })
+
+    it('decodes escapes in a string', () => {
+      expect(output('    printf("a\\tb\\rc\\n");')).toBe('a\tb\rc\n')
+      expect(output('    puts("x\\ty");')).toBe('x\ty\n')
+      expect(output('    printf("say \\"hi\\" \\\\ it\'s");')).toBe(`say "hi" \\ it's`)
+      expect(output('    printf("it\\\'s");')).toBe("it's")
+    })
+
+    it('stores a tab in a char array, and shows it as \\t rather than as blank space', () => {
+      const steps = stepsOf(main('    char s[] = "a\\tb";', '    printf("%s", s);'))
+
+      expect(steps[0].array).toMatchObject({ values: [97, 9, 98, 0], chars: true })
+      expect(steps[0].variables).toContainEqual({ name: 's', value: '"a\\tb"' })
+      expect(english(steps[0])).toContain('store "a\\tb" in it: 3 characters')
+      expect(steps[1].output).toBe('a\tb')
+      expect(english(steps[1])).toContain('a\\tb')
+      expect(english(steps[1])).not.toContain('\t')
+    })
+
+    it('draws each array cell as the escape, the way \\0 is drawn', () => {
+      expect([0, 9, 10, 13].map((code) => charText(code))).toEqual(['\\0', '\\t', '\\n', '\\r'])
+    })
+
+    it('ends text at a \\0 in a string, as C does, while the array keeps every byte', () => {
+      expect(output('    printf("a\\0b");')).toBe('a')
+      expect(output('    puts("a\\0b");')).toBe('a\n')
+      expect(output('    printf("%s|", "a\\0b");')).toBe('a|')
+      // \0 followed by 8 or 9 is not octal, so it still ends the text.
+      expect(output('    printf("a\\08");')).toBe('a')
+
+      const steps = stepsOf(main('    char s[] = "a\\0b";', '    int n = sizeof(s);', '    puts(s);'))
+      expect(steps[0].array).toMatchObject({ values: [97, 0, 98, 0] })
+      expect(steps[0].variables).toContainEqual({ name: 's', value: '"a"' })
+      expect(english(steps[0])).toContain('store "a\\0b" in it')
+      expect(steps[1].variables).toContainEqual({ name: 'n', value: '4' })
+      expect(steps.at(-1)!.output).toBe('a\n')
+    })
+
+    it('does not read an octal escape as \\0 and then digits', () => {
+      const error = (body: string) => {
+        const result = runUserCode(main(body))
+        if (!('error' in result)) throw new Error('Expected an error')
+        return result.error
+      }
+
+      expect(error('    printf("\\012");').text).toEqual({ key: 'unsupported.escape', values: { escape: '\\01' } })
+      expect(error("    char c = '\\012';").text).toEqual({ key: 'unsupported.escape', values: { escape: '\\01' } })
+      expect(error('    printf("a\\0%d", 1);').text.key).toBe('codeError.printfCount')
+      expect(error('    printf("\\q");').text).toEqual({ key: 'unsupported.escape', values: { escape: '\\q' } })
+      expect(error('    printf("\\x41");').text).toEqual({ key: 'unsupported.escape', values: { escape: '\\x' } })
+    })
+
+    it('explains isspace on a tab with the escape, not a blank', () => {
+      const steps = stepsOf(main("    int a = isspace('\\t');", "    int b = isspace('\\n');"))
+      expect(steps[0].variables).toContainEqual({ name: 'a', value: '1' })
+      expect(steps[1].variables).toContainEqual({ name: 'b', value: '1' })
+      expect(english(steps[0])).toContain("isspace('\\t') gives 1 (true): '\\t' is a whitespace character")
+      expect(english(steps[1])).toContain("isspace('\\n') gives 1 (true): '\\n' is a whitespace character")
     })
   })
 

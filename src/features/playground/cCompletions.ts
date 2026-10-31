@@ -75,6 +75,55 @@ const completions: Completion[] = [
     // NULL is the only argument the interpreter accepts here.
     apply: 'time(NULL)',
   },
+  {
+    label: 'isdigit',
+    type: 'function',
+    detail: 'isdigit — 1 if the character is a digit, otherwise 0 (needs <ctype.h>)',
+    info: "isdigit(c)  // isdigit('7') is 1",
+    apply: snippet('isdigit(${})'),
+  },
+  {
+    label: 'isalpha',
+    type: 'function',
+    detail: 'isalpha — 1 if the character is a letter, otherwise 0 (needs <ctype.h>)',
+    info: "isalpha(c)  // isalpha('x') is 1",
+    apply: snippet('isalpha(${})'),
+  },
+  {
+    label: 'isupper',
+    type: 'function',
+    detail: 'isupper — 1 if the character is an uppercase letter, otherwise 0 (needs <ctype.h>)',
+    info: "isupper(c)  // isupper('A') is 1",
+    apply: snippet('isupper(${})'),
+  },
+  {
+    label: 'islower',
+    type: 'function',
+    detail: 'islower — 1 if the character is a lowercase letter, otherwise 0 (needs <ctype.h>)',
+    info: "islower(c)  // islower('a') is 1",
+    apply: snippet('islower(${})'),
+  },
+  {
+    label: 'isspace',
+    type: 'function',
+    detail: 'isspace — 1 if the character is a space, tab or new line, otherwise 0 (needs <ctype.h>)',
+    info: "isspace(c)  // isspace(' ') is 1",
+    apply: snippet('isspace(${})'),
+  },
+  {
+    label: 'toupper',
+    type: 'function',
+    detail: 'toupper — a lowercase letter made uppercase; anything else stays as it is (needs <ctype.h>)',
+    info: "toupper(c)  // toupper('a') is 'A'",
+    apply: snippet('toupper(${})'),
+  },
+  {
+    label: 'tolower',
+    type: 'function',
+    detail: 'tolower — an uppercase letter made lowercase; anything else stays as it is (needs <ctype.h>)',
+    info: "tolower(c)  // tolower('A') is 'a'",
+    apply: snippet('tolower(${})'),
+  },
 ]
 
 // Strings and comments are plain text to the program, so typing in them shouldn't pop up code suggestions.

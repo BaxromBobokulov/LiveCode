@@ -86,7 +86,9 @@ export function isGridView(view: ArrayView | GridView): view is GridView {
  */
 export function charText(code: number): string {
   if (code === 0) return '\\0'
+  if (code === 9) return '\\t'
   if (code === 10) return '\\n'
+  if (code === 13) return '\\r'
   if (code === 39) return "\\'"
   if (code === 92) return '\\\\'
   if (code >= 32 && code <= 126) return String.fromCharCode(code)

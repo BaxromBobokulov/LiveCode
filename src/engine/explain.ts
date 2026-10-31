@@ -26,6 +26,10 @@ export type StepFact =
   | { kind: 'readCell'; target: string; value: string }
   /** A rand() call worked out while running this line, and the number it gave. */
   | { kind: 'rand'; value: string }
+  /** An isdigit()-style call worked out while running this line. `what` names what it looks for. */
+  | { kind: 'ctypeTest'; call: string; arg: string; passed: boolean; what: Phrase }
+  /** A toupper() or tolower() call worked out while running this line. `what` names the only characters it changes. */
+  | { kind: 'ctypeConvert'; call: string; arg: string; result: string; code: number; changed: boolean; what: Phrase }
   /**
    * A sizeof worked out while running this line: `size` bytes of `type`. `count` is set when it measured a
    * whole array, or one row of a 2D array (`isRow`): that many elements of `type`.
@@ -207,6 +211,13 @@ export function explain(fact: StepFact): Phrase[] {
     case 'rand':
       return [{ key: 'explain.rand', values: { value: fact.value } }]
 
+    case 'ctypeTest':
+      return [{ key: fact.passed ? 'explain.ctypeYes' : 'explain.ctypeNo', values: { call: fact.call, arg: fact.arg, what: fact.what } }]
+
+    case 'ctypeConvert':
+      if (fact.changed) return [{ key: 'explain.ctypeChanged', values: { call: fact.call, result: fact.result, code: fact.code } }]
+      return [{ key: 'explain.ctypeSame', values: { call: fact.call, arg: fact.arg, code: fact.code, what: fact.what } }]
+
     case 'time':
       return [{ key: 'explain.time', values: { value: fact.value } }]
 
@@ -319,7 +330,7 @@ export function explain(fact: StepFact): Phrase[] {
       if (fact.text === '') return [{ key: 'explain.printEmpty' }]
       if (fact.text === '\n') return [{ key: 'explain.printNewline' }]
       const endsLine = fact.text.endsWith('\n')
-      const text = (endsLine ? fact.text.slice(0, -1) : fact.text).replace(/\n/g, '\\n')
+      const text = (endsLine ? fact.text.slice(0, -1) : fact.text).replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r')
       return [{ key: endsLine ? 'explain.printLine' : 'explain.print', values: { text } }]
     }
   }

@@ -29,7 +29,7 @@ const punctuators = [
   '(', ')', '{', '}', '[', ']', ';', ',', '.',
 ]
 
-/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` / `<time.h>` are skipped. */
+/** Splits C source into tokens. Comments and `#include <stdio.h>` / `<stdlib.h>` / `<time.h>` / `<ctype.h>` are skipped. */
 export function tokenize(source: string): Token[] {
   const tokens: Token[] = []
   let pos = 0
@@ -66,12 +66,12 @@ export function tokenize(source: string): Token[] {
       continue
     }
 
-    // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>` and `<time.h>` are allowed, and they are ignored.
+    // Preprocessor lines: only `#include <stdio.h>`, `<stdlib.h>`, `<time.h>` and `<ctype.h>` are allowed, and they are ignored.
     // Only the directive itself is read here; the rest of the line goes through the loop as usual,
     // so spaces and comments after it are skipped like anywhere else.
     if (char === '#' && atLineStart) {
       const include = /^#[ \t]*include[ \t]*<([^>\n]*)>/.exec(source.slice(pos))
-      if (!include || !['stdio.h', 'stdlib.h', 'time.h'].includes(include[1])) {
+      if (!include || !['stdio.h', 'stdlib.h', 'time.h', 'ctype.h'].includes(include[1])) {
         let end = source.indexOf('\n', pos)
         if (end === -1) end = source.length
         const directive = source.slice(pos, end).trim()
@@ -139,7 +139,7 @@ export function tokenize(source: string): Token[] {
     pos++ // opening quote
     while (pos < source.length && source[pos] !== '"') {
       if (source[pos] === '\n') break
-      text += source[pos] === '\\' ? readEscape(false) : source[pos++]
+      text += source[pos] === '\\' ? readEscape() : source[pos++]
     }
     if (source[pos] !== '"') throw new CodeError(line, 'codeError.unclosedString')
     pos++ // closing quote
@@ -151,7 +151,7 @@ export function tokenize(source: string): Token[] {
     pos++ // opening quote
     let text = ''
     while (pos < source.length && source[pos] !== "'" && source[pos] !== '\n') {
-      text += source[pos] === '\\' ? readEscape(true) : source[pos++]
+      text += source[pos] === '\\' ? readEscape() : source[pos++]
     }
     // Exactly one character between the quotes: not '' or 'ab', and the closing ' is there.
     if (source[pos] !== "'" || text.length !== 1) throw new CodeError(line, 'codeError.badChar')
@@ -161,14 +161,18 @@ export function tokenize(source: string): Token[] {
     return code
   }
 
-  // Reads an escape like \n at `pos` and returns the character it stands for. \0 only works in a char literal.
-  function readEscape(inChar: boolean): string {
+  // Reads an escape like \n at `pos` and returns the character it stands for.
+  function readEscape(): string {
     const escape = source[pos + 1]
     pos += 2
     if (escape === 'n') return '\n'
+    if (escape === 't') return '\t'
+    if (escape === 'r') return '\r'
     if (escape === '"' || escape === "'" || escape === '\\') return escape
-    if (escape === '0' && inChar) return '\0'
-    const values = { escape: `\\${escape ?? ''}` }
+    // A digit after \0 makes it an octal escape in C: "\012" is a new line, not \0 and then 12.
+    const octalDigit = escape === '0' && /[0-7]/.test(source[pos] ?? '') ? source[pos] : ''
+    if (escape === '0' && !octalDigit) return '\0'
+    const values = { escape: `\\${escape ?? ''}${octalDigit}` }
     throw new UnsupportedConstructError(line, { key: 'construct.escape', values }, { key: 'unsupported.escape', values })
   }
 }

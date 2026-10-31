@@ -182,8 +182,12 @@ export function toSource(expr: Expr): string {
 
 /** Text as it would be written in C, in double quotes: "hi\n". */
 export function quoteText(text: string): string {
-  return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+  const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `"${escaped.replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r').replace(/\0/g, '\\0')}"`
 }
+
+/** C text ends at its first \0, so whatever follows one in a "string" is never printed. */
+const upToTerminator = (text: string) => text.split('\0')[0]
 
 /** Formats a value for display: ints as-is, floats always with a decimal point ("2.0", "3.14"), chars in quotes ('A'). */
 export function formatNumber(value: number, type: NumType): string {
@@ -840,7 +844,8 @@ export function parse(source: string): Program {
     expect(')')
     expect(';')
 
-    const specifiers = readFormatSpecifiers(formatToken.text, line)
+    const format = upToTerminator(formatToken.text)
+    const specifiers = readFormatSpecifiers(format, line)
     if (specifiers.length !== args.length) {
       throw new CodeError(line, 'codeError.printfCount', { placeholders: specifiers.length, given: args.length })
     }
@@ -852,7 +857,7 @@ export function parse(source: string): Program {
       if (specifier !== 's' && kind === 'string') throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
     })
 
-    return { kind: 'printf', line, format: formatToken.text, args }
+    return { kind: 'printf', line, format, args }
   }
 
   /** A "string" literal where text is allowed, or else an ordinary expression. */
@@ -860,7 +865,7 @@ export function parse(source: string): Program {
     const token = peek()
     if (token.kind !== 'string') return parseExpression()
     advance()
-    return { kind: 'string', line: token.line, value: token.text }
+    return { kind: 'string', line: token.line, value: upToTerminator(token.text) }
   }
 
   /**
@@ -887,7 +892,7 @@ export function parse(source: string): Program {
     if (formatToken.kind !== 'string') throw new CodeError(formatToken.line, 'codeError.scanfFormat')
     advance()
 
-    const specifiers = readFormatSpecifiers(formatToken.text, line, 'scanf') as ('d' | 'f' | 's')[]
+    const specifiers = readFormatSpecifiers(upToTerminator(formatToken.text), line, 'scanf') as ('d' | 'f' | 's')[]
     if (specifiers.length === 0) throw new CodeError(line, 'codeError.scanfFormat')
 
     const targets: Target[] = []
