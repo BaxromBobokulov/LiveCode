@@ -81,6 +81,12 @@ export type StepFact =
       /** What comes after this branch when the condition is false. */
       next: 'else if' | 'else' | 'nothing'
     }
+  /** `switch (x)` worked out `value`. `skipped`: no case matched and there is no default. */
+  | { kind: 'switchCheck'; value: Shown; skipped: boolean }
+  /** The switch starts at this label, `value` being what it compared. `stacked` is every label sharing this code, this one included. */
+  | { kind: 'switchEnter'; label: string; isDefault: boolean; value: string; stacked: Phrase[] }
+  /** The case above ended with no break, so the program ran on past these labels. */
+  | { kind: 'fallThrough'; labels: Phrase[] }
   /** `points` is set for a pointer parameter: the variable it now points to, or NULL. */
   | { kind: 'call'; name: string; args: string[]; params: { name: string; value: string; isArray: boolean; points?: PointsTo }[] }
   | { kind: 'return'; name: string; value: Shown | null; caller: string | null }
@@ -90,9 +96,9 @@ export type StepFact =
   | { kind: 'scan'; target: string; value: string }
   /** scanf("%s") stored the next input word in the char array `name`. */
   | { kind: 'scanText'; name: string; text: string; count: number }
-  | { kind: 'break' }
-  /** `toUpdate` marks a for loop with an update part (`i++`), which runs before the next check. */
-  | { kind: 'continue'; toUpdate: boolean }
+  | { kind: 'break'; ofSwitch: boolean }
+  /** `toUpdate` marks a for loop with an update part (`i++`), which runs before the next check. `inSwitch`: it also leaves a switch. */
+  | { kind: 'continue'; toUpdate: boolean; inSwitch: boolean }
 
 /** "sum + arr[i]: 4 + 8 = 12", "arr[i] (19)" or just "5", depending on how much there is to show. Only code and numbers, so no translation. */
 function showValue({ source, work, result }: Shown): string {
@@ -314,6 +320,20 @@ export function explain(fact: StepFact): Phrase[] {
       return [{ key: fact.branch === 'if' ? 'explain.ifCheck' : 'explain.elseIfCheck', values: { condition, outcome } }]
     }
 
+    case 'switchCheck': {
+      const check: Phrase = { key: 'explain.switchCheck', values: { value: showValue(fact.value) } }
+      return fact.skipped ? [check, { key: 'explain.switchSkip' }] : [check]
+    }
+
+    case 'switchEnter': {
+      const values = { label: fact.label, value: fact.value }
+      const entered: Phrase = { key: fact.isDefault ? 'explain.caseDefault' : 'explain.caseMatch', values }
+      return fact.stacked.length > 1 ? [entered, { key: 'explain.caseShared', values: { labels: fact.stacked } }] : [entered]
+    }
+
+    case 'fallThrough':
+      return [{ key: 'explain.fallThrough', values: { labels: fact.labels } }]
+
     case 'call': {
       const call = `${fact.name}(${fact.args.join(', ')})`
       if (fact.params.length === 0) return [{ key: 'explain.callNoArgs', values: { call } }]
@@ -355,10 +375,12 @@ export function explain(fact: StepFact): Phrase[] {
       return [{ key: 'explain.scanText', values: { name: fact.name, text: fact.text, count: fact.count } }]
 
     case 'break':
-      return [{ key: 'explain.break' }]
+      return [{ key: fact.ofSwitch ? 'explain.breakSwitch' : 'explain.break' }]
 
-    case 'continue':
-      return [{ key: fact.toUpdate ? 'explain.continueFor' : 'explain.continueWhile' }]
+    case 'continue': {
+      const skip: Phrase = { key: fact.toUpdate ? 'explain.continueFor' : 'explain.continueWhile' }
+      return fact.inSwitch ? [skip, { key: 'explain.continueSwitch' }] : [skip]
+    }
 
     case 'print': {
       if (fact.text === '') return [{ key: 'explain.printEmpty' }]

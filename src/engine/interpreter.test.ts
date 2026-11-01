@@ -1342,14 +1342,16 @@ describe('runUserCode', () => {
   })
 
   it('reports break or continue outside a loop as a code error', () => {
-    for (const keyword of ['break', 'continue']) {
-      const result = runUserCode(lines('int main() {', '    int x = 1;', `    ${keyword};`, '    return 0;', '}'))
-      expect('error' in result && result.error).toBeInstanceOf(CodeError)
-      expect('error' in result && result.error).toMatchObject({ line: 3, text: { key: 'codeError.outsideLoop', values: { keyword } } })
-    }
+    const inMain = (keyword: string) => runUserCode(lines('int main() {', '    int x = 1;', `    ${keyword};`, '    return 0;', '}'))
+    const stray = inMain('break')
+    expect('error' in stray && stray.error).toBeInstanceOf(CodeError)
+    expect(stray).toMatchObject({ error: { line: 3, text: { key: 'codeError.breakOutside' } } })
+    const skip = inMain('continue')
+    expect('error' in skip && skip.error).toBeInstanceOf(CodeError)
+    expect(skip).toMatchObject({ error: { line: 3, text: { key: 'codeError.outsideLoop', values: { keyword: 'continue' } } } })
     // A function called from a loop is still outside it, as in real C.
     const result = runUserCode(lines('void f() {', '    break;', '}', 'int main() {', '    while (1) f();', '    return 0;', '}'))
-    expect(result).toMatchObject({ error: { line: 2, text: { key: 'codeError.outsideLoop' } } })
+    expect(result).toMatchObject({ error: { line: 2, text: { key: 'codeError.breakOutside' } } })
   })
 
   it('stops a loop that never ends at the step limit instead of hanging', () => {
@@ -1358,6 +1360,390 @@ describe('runUserCode', () => {
       const result = runUserCode(lines('int main() {', '    int i = 0;', `    ${loop}`, '    }', '    return 0;', '}'))
       expect(result).toMatchObject({ error: { line: 3, text: { key: 'codeError.stepLimit', values: { max: MAX_STEPS } } } })
     }
+  })
+
+  describe('switch', () => {
+    /** A program that sets x to `value` on line 2 and runs `body`, whose first line is line 3. */
+    const withValue = (value: string, ...body: string[]) => lines('int main() {', `    int x = ${value};`, ...body, '    return 0;', '}')
+    const output = (source: string) => stepsOf(source).at(-1)?.output
+
+    it('runs only the matching case when every branch has a break', () => {
+      const program = (value: number) =>
+        withValue(
+          String(value),
+          '    switch (x) {',
+          '        case 1:',
+          '            printf("one");',
+          '            break;',
+          '        case 2:',
+          '            printf("two");',
+          '            break;',
+          '        default:',
+          '            printf("other");',
+          '            break;',
+          '    }',
+          '    printf("!");',
+        )
+      expect(output(program(1))).toBe('one!')
+      expect(output(program(2))).toBe('two!')
+      expect(output(program(3))).toBe('other!')
+
+      const steps = stepsOf(program(2))
+      // The switch line, its matched label, the code, the break, then straight past the switch.
+      expect(steps.map((s) => s.line)).toEqual([2, 3, 7, 8, 9, 14, 15])
+      expect(english(steps[1])).toBe('switch compares x (2) with its case labels.')
+      expect(english(steps[2])).toBe('case 2 matches 2, so the program starts here and runs the code below it.')
+      expect(english(steps[4])).toBe('break: leave the switch right away. The rest of it is skipped and the program goes on after it.')
+    })
+
+    it('shows a fall-through across two cases as its own steps, without checking their values', () => {
+      const steps = stepsOf(
+        withValue(
+          '1',
+          '    switch (x) {',
+          '        case 1:',
+          '            printf("a");',
+          '        case 2:',
+          '            printf("b");',
+          '        case 3:',
+          '            printf("c");',
+          '            break;',
+          '        case 4:',
+          '            printf("d");',
+          '    }',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('abc')
+      expect(steps.map((s) => s.line)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 14])
+      expect(english(steps[4])).toBe(
+        'There is no break, so the program falls through into case 2. A label is not checked here: the code below it just runs.',
+      )
+      expect(steps[6].explanation[0]).toMatchObject({ key: 'explain.fallThrough' })
+      // Reaching the end of the last case with no break just leaves the switch, with no extra step.
+      const last = stepsOf(withValue('4', '    switch (x) {', '        case 4:', '            printf("d");', '    }'))
+      expect(last.map((s) => s.line)).toEqual([2, 3, 4, 5, 7])
+    })
+
+    it('shares one block of code between stacked case labels', () => {
+      const program = (value: number) =>
+        withValue(
+          String(value),
+          '    switch (x) {',
+          '        case 1:',
+          '        case 2:',
+          '        case 3:',
+          '            printf("low");',
+          '            break;',
+          '        case 4:',
+          '            printf("high");',
+          '    }',
+        )
+      for (const value of [1, 2, 3]) expect(output(program(value))).toBe('low')
+      expect(output(program(4))).toBe('high')
+
+      // The label that matched is the one highlighted, and the stack below it adds no steps of its own.
+      const steps = stepsOf(program(2))
+      expect(steps.map((s) => s.line)).toEqual([2, 3, 5, 7, 8, 12])
+      expect(english(steps[2])).toBe(
+        'case 2 matches 2, so the program starts here and runs the code below it. case 1, case 2 and case 3 have no code between them, so they share the code below.',
+      )
+
+      // Falling into a stack is one step, on its first label.
+      const fall = stepsOf(
+        withValue('0', '    switch (x) {', '        case 0:', '            x = 5;', '        case 1:', '        case 2:', '            x = 6;', '    }'),
+      )
+      expect(fall.map((s) => s.line)).toEqual([2, 3, 4, 5, 6, 8, 10])
+      expect(english(fall[4])).toContain('falls through into case 1 and case 2.')
+    })
+
+    it('uses a default in the middle only when no case matches, and falls through out of it', () => {
+      const program = (value: number) =>
+        withValue(
+          String(value),
+          '    switch (x) {',
+          '        case 1:',
+          '            printf("one ");',
+          '            break;',
+          '        default:',
+          '            printf("default ");',
+          '        case 2:',
+          '            printf("two ");',
+          '            break;',
+          '        case 3:',
+          '            printf("three ");',
+          '    }',
+        )
+      // A case after the default still matches: the default is not checked in order.
+      expect(output(program(3))).toBe('three ')
+      expect(output(program(2))).toBe('two ')
+      expect(output(program(1))).toBe('one ')
+      expect(output(program(9))).toBe('default two ')
+
+      const steps = stepsOf(program(9))
+      expect(steps.map((s) => s.line)).toEqual([2, 3, 7, 8, 9, 10, 11, 15])
+      expect(english(steps[2])).toBe('No case matches 9, so the program starts at default and runs the code below it.')
+      expect(english(steps[4])).toContain('falls through into case 2.')
+    })
+
+    it('runs the default when no case matches, and skips the switch when there is no default', () => {
+      const withDefault = stepsOf(
+        withValue('9', '    switch (x) {', '        case 1:', '            x = 0;', '        default:', '            printf("no match");', '    }'),
+      )
+      expect(withDefault.at(-1)?.output).toBe('no match')
+      expect(withDefault.map((s) => s.line)).toEqual([2, 3, 6, 7, 9])
+
+      const without = stepsOf(withValue('9', '    switch (x) {', '        case 1:', '            printf("one");', '    }', '    printf("after");'))
+      expect(without.at(-1)?.output).toBe('after')
+      expect(without.map((s) => s.line)).toEqual([2, 3, 7, 8])
+      expect(english(without[1])).toBe(
+        'switch compares x (9) with its case labels. No case matches and there is no default, so the whole switch is skipped.',
+      )
+
+      // A switch with nothing in it still works out its value.
+      expect(stepsOf(withValue('9', '    switch (x) {', '    }')).map((s) => s.line)).toEqual([2, 3, 5])
+    })
+
+    it('makes a break leave only the switch when it is inside a loop', () => {
+      const steps = stepsOf(
+        lines(
+          'int main() {',
+          '    for (int i = 0; i < 3; i++) {',
+          '        switch (i) {',
+          '            case 1:',
+          '                printf("one ");',
+          '                break;',
+          '            default:',
+          '                printf("other ");',
+          '                break;',
+          '        }',
+          '        printf("| ");',
+          '    }',
+          '    printf("end");',
+          '    return 0;',
+          '}',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('other | one | other | end')
+      // The loop runs all 3 times, and each switch step knows which iteration it is in.
+      expect(steps.filter((s) => s.line === 3).map((s) => s.loop)).toEqual([
+        { line: 2, iteration: 1, total: 3 },
+        { line: 2, iteration: 2, total: 3 },
+        { line: 2, iteration: 3, total: 3 },
+      ])
+      const breakStep = steps.find((s) => s.explanation[0].key === 'explain.breakSwitch')!
+      expect(steps[steps.indexOf(breakStep) + 1].line).toBe(11)
+    })
+
+    it('makes a break inside a loop inside a switch leave only that loop', () => {
+      const steps = stepsOf(
+        withValue(
+          '1',
+          '    switch (x) {',
+          '        case 1:',
+          '            while (1) {',
+          '                break;',
+          '            }',
+          '            printf("after loop ");',
+          '        case 2:',
+          '            printf("two");',
+          '    }',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('after loop two')
+      expect(steps.find((s) => s.line === 6)?.explanation[0].key).toBe('explain.break')
+    })
+
+    it('makes a continue inside a switch apply to the loop around it', () => {
+      const program = (loop: string, update: string) =>
+        lines(
+          'int main() {',
+          '    int i = 0;',
+          `    ${loop} {`,
+          `        ${update}`,
+          '        switch (i) {',
+          '            case 2:',
+          '                continue;',
+          '            default:',
+          '                printf("sw ");',
+          '        }',
+          '        printf("%d ", i);',
+          '    }',
+          '    return 0;',
+          '}',
+        )
+      const whileSteps = stepsOf(program('while (i < 3)', 'i++;'))
+      expect(whileSteps.at(-1)?.output).toBe('sw 1 sw 3 ')
+      const step = whileSteps.find((s) => s.line === 7)!
+      expect(english(step)).toBe(
+        'continue: skip the rest of this iteration and go back to check the loop condition again. continue belongs to the loop around this switch, so it leaves the switch too.',
+      )
+      // The print after the switch is skipped: the very next step is the loop check.
+      expect(whileSteps[whileSteps.indexOf(step) + 1].line).toBe(3)
+
+      const forSteps = stepsOf(program('for (i = 1; i <= 3; i++)', ';'))
+      expect(forSteps.at(-1)?.output).toBe('sw 1 sw 3 ')
+      expect(forSteps.find((s) => s.line === 7)?.explanation[0].key).toBe('explain.continueFor')
+    })
+
+    it('leaves only the inner switch when switches are nested', () => {
+      const steps = stepsOf(
+        withValue(
+          '1',
+          '    switch (x) {',
+          '        case 1:',
+          '            switch (x + 1) {',
+          '                case 2:',
+          '                    printf("inner ");',
+          '                    break;',
+          '            }',
+          '            printf("outer ");',
+          '        case 5:',
+          '            printf("five");',
+          '    }',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('inner outer five')
+      expect(english(steps[3])).toBe('switch compares x + 1: 1 + 1 = 2 with its case labels.')
+    })
+
+    it('works on chars, with char or number labels and constant expressions', () => {
+      const grade = (letter: string) =>
+        lines(
+          'int main() {',
+          `    char c = '${letter}';`,
+          '    switch (c) {',
+          "        case 'A':",
+          "        case 'B':",
+          '            printf("good");',
+          '            break;',
+          '        case 67:',
+          '            printf("ok");',
+          '            break;',
+          "        case 'A' + 3:",
+          '            printf("poor");',
+          '            break;',
+          '        default:',
+          '            printf("?");',
+          '    }',
+          '    return 0;',
+          '}',
+        )
+      expect(['A', 'B', 'C', 'D', 'E'].map((letter) => output(grade(letter)))).toEqual(['good', 'good', 'ok', 'poor', '?'])
+      const steps = stepsOf(grade('B'))
+      expect(english(steps[1])).toBe("switch compares c ('B') with its case labels.")
+      expect(english(steps[2])).toContain("case 'B' matches 'B'")
+
+      expect(output(withValue('-4', '    switch (x) {', '        case -2 * 2:', '            printf("minus four");', '    }'))).toBe('minus four')
+      expect(output(withValue('66', "    switch (x) {", "        case 'B':", '            printf("B");', '    }'))).toBe('B')
+    })
+
+    it('runs the value once, keeping its reads in the switch step', () => {
+      const steps = stepsOf(
+        lines(
+          'int next(int a) {',
+          '    return a + 1;',
+          '}',
+          'int main() {',
+          '    int arr[2] = {7, 8};',
+          '    switch (next(arr[1])) {',
+          '        case 9:',
+          '            printf("nine");',
+          '    }',
+          '    switch (arr[0]) {',
+          '    }',
+          '    return 0;',
+          '}',
+        ),
+      )
+      expect(steps.filter((s) => s.scope === 'next()')).toHaveLength(2)
+      expect(steps.filter((s) => s.line === 6)).toHaveLength(1)
+      expect(steps.find((s) => s.line === 10)?.array).toMatchObject({ name: 'arr', activeIndex: 0 })
+    })
+
+    it('returns out of a switch from inside a function', () => {
+      const steps = stepsOf(
+        lines(
+          'int points(char c) {',
+          '    switch (c) {',
+          "        case 'x':",
+          '            return 10;',
+          '        default:',
+          '            return 1;',
+          '    }',
+          '}',
+          'int main() {',
+          "    printf(\"%d %d\", points('x'), points('y'));",
+          '    return 0;',
+          '}',
+        ),
+      )
+      expect(steps.at(-1)?.output).toBe('10 1')
+    })
+
+    it('keeps one scope for the whole body, as in C', () => {
+      // A variable declared in one case is still there after falling into the next.
+      expect(output(withValue('1', '    switch (x) {', '        case 1:', '            x = 2;', '            int y = 5;', '        case 2:', '            printf("%d", y);', '    }'))).toBe('5')
+
+      // Jumping past a declaration leaves the variable there with no value.
+      const skipped = withValue('2', '    switch (x) {', '        case 1:', '            x = 1;', '            int y = 5;', '        case 2:', '            y = 7;', '            printf("%d", y);', '    }')
+      expect(output(skipped)).toBe('7')
+      expect(stepsOf(skipped)[2].variables).toContainEqual({ name: 'y', value: '?' })
+
+      // A declaration before the first label is never run, but its variable can be used.
+      expect(output(withValue('1', '    switch (x) {', '        int y;', '        case 1:', '            y = 3;', '            printf("%d", y);', '    }'))).toBe('3')
+
+      // ... and reading one that never got a value is the usual mistake.
+      expect(runUserCode(withValue('2', '    switch (x) {', '        case 1:', '            x = 1;', '            int y = 5;', '        case 2:', '            printf("%d", y);', '    }'))).toMatchObject({
+        error: { line: 8, text: { key: 'codeError.noValue', values: { name: 'y' } } },
+      })
+
+      // The variable is gone after the switch, and a new run of a loop body starts fresh.
+      expect(runUserCode(withValue('1', '    switch (x) {', '        case 1:', '            x = 2;', '            int y = 5;', '    }', '    printf("%d", y);'))).toMatchObject({
+        error: { line: 8, text: { key: 'codeError.notDeclared' } },
+      })
+      expect(output(lines('int main() {', '    for (int i = 0; i < 2; i++) {', '        switch (i) {', '            default:', '                ;', '                int y = i;', '                printf("%d", y);', '        }', '    }', '    return 0;', '}'))).toBe('01')
+    })
+
+    it('stops a loop whose switch never leaves it at the step limit', () => {
+      const result = runUserCode(withValue('1', '    while (x) {', '        switch (x) {', '            case 1:', '                break;', '        }', '    }'))
+      expect(result).toMatchObject({ error: { text: { key: 'codeError.stepLimit' } } })
+    })
+
+    it('rejects what real C rejects, as code errors', () => {
+      const errorOf = (source: string) => {
+        const result = runUserCode(source)
+        if (!('error' in result)) throw new Error('Expected an error')
+        expect(result.error).toBeInstanceOf(CodeError)
+        return { line: result.error.line, key: result.error.text.key }
+      }
+      const inSwitch = (...body: string[]) => withValue('1', '    switch (x) {', ...body, '    }')
+
+      expect(errorOf(inSwitch('        case 1:', '        case 1:'))).toEqual({ line: 5, key: 'codeError.caseTwice' })
+      expect(errorOf(inSwitch('        case 65:', "        case 'A':"))).toEqual({ line: 5, key: 'codeError.caseTwice' })
+      expect(errorOf(inSwitch('        default:', '        default:'))).toEqual({ line: 5, key: 'codeError.defaultTwice' })
+      expect(errorOf(inSwitch('        case x:'))).toEqual({ line: 4, key: 'codeError.caseNotConstant' })
+      expect(errorOf(inSwitch('        case 1.5:'))).toEqual({ line: 4, key: 'codeError.caseNotInt' })
+      expect(errorOf(inSwitch('        case "a":'))).toEqual({ line: 4, key: 'codeError.caseNotInt' })
+      expect(errorOf(inSwitch('        case 1 / 0:'))).toEqual({ line: 4, key: 'codeError.divisionByZero' })
+      expect(errorOf(inSwitch('        case 1'))).toEqual({ line: 5, key: 'codeError.expected' })
+      expect(errorOf(inSwitch('        case 1:', '            continue;'))).toEqual({ line: 5, key: 'codeError.outsideLoop' })
+
+      expect(errorOf(withValue('1', '    switch (1.5) {', '    }'))).toEqual({ line: 3, key: 'codeError.switchNotInt' })
+      expect(errorOf(withValue('1', '    float f = 2.5;', '    switch (f) {', '    }'))).toEqual({ line: 4, key: 'codeError.switchNotInt' })
+      expect(errorOf(withValue('1', '    switch ("hi") {', '    }'))).toEqual({ line: 3, key: 'codeError.switchNotInt' })
+      expect(errorOf(withValue('1', '    case 1:'))).toEqual({ line: 3, key: 'codeError.outsideSwitch' })
+      expect(errorOf(withValue('1', '    default:'))).toEqual({ line: 3, key: 'codeError.outsideSwitch' })
+    })
+
+    it('says which valid forms are not supported yet', () => {
+      const nested = runUserCode(withValue('1', '    switch (x) {', '        case 1:', '            if (x) {', '                case 2:', '                    x = 3;', '            }', '    }'))
+      expect(nested).toMatchObject({ error: { line: 6, text: { key: 'unsupported.caseNested' } } })
+      expect('error' in nested && nested.error).toBeInstanceOf(UnsupportedConstructError)
+
+      const noBraces = runUserCode(withValue('1', '    switch (x)', '        printf("x");'))
+      expect(noBraces).toMatchObject({ error: { line: 3, text: { key: 'unsupported.switchNoBraces' } } })
+      expect('error' in noBraces && noBraces.error).toBeInstanceOf(UnsupportedConstructError)
+    })
   })
 
   describe('pointers', () => {

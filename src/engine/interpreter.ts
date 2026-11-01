@@ -2,6 +2,8 @@ import type { TranslationKey } from '../i18n/translations'
 import { CodeError, UnsupportedConstructError, code, scanfReadError, type RunError } from './errors'
 import { explain, type PointsTo, type Shown, type StepFact } from './explain'
 import {
+  arithmetic,
+  convert,
   formatNumber,
   needsParens,
   parse,
@@ -21,6 +23,7 @@ import {
   type Stmt,
   type StructDeclarator,
   type StructDef,
+  type SwitchLabel,
   type Target,
 } from './parser'
 import { fieldKey, variableKey, type ArrayView, type GridCell, type GridView, type LoopInfo, type Phrase, type Step, type Variable } from './types'
@@ -128,7 +131,8 @@ type Value = { type: NumType; value: number; work: string }
 
 /**
  * How a statement can cut the rest of its block short, passed up through the blocks around it:
- * a `return` (its value, null for `void`) up to the function, a `break` or `continue` up to the innermost loop.
+ * a `return` (its value, null for `void`) up to the function, a `break` up to the innermost loop or switch,
+ * and a `continue` up to the innermost loop.
  */
 type Jump = { kind: 'return'; value: number | null } | { kind: 'break' } | { kind: 'continue' }
 
@@ -152,12 +156,6 @@ export function runUserCode(source: string, input = ''): { steps: Step[] } | { e
     if (error instanceof UnsupportedConstructError || error instanceof CodeError) return { error }
     return { error: new CodeError(1, 'codeError.internal') }
   }
-}
-
-function convert(value: number, type: NumType): number {
-  if (type === 'float') return Math.fround(value)
-  // A char holds -128 to 127, so a bigger number wraps around, like in C.
-  return type === 'char' ? (Math.trunc(value) << 24) >> 24 : Math.trunc(value) | 0
 }
 
 /** The text in a char array: its characters up to the first \0, or null when there is no \0. */
@@ -228,29 +226,6 @@ function charCodes(text: string, line: number): number[] {
 /** Wraps an operand's text in parentheses when the source would need them, e.g. "(4 + 8) * 2". */
 function wrap(text: string, child: Expr, op: BinaryOp, isRight: boolean): string {
   return needsParens(child, op, isRight) ? `(${text})` : text
-}
-
-function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: number): number {
-  switch (op) {
-    case '==': return a === b ? 1 : 0
-    case '!=': return a !== b ? 1 : 0
-    case '<': return a < b ? 1 : 0
-    case '>': return a > b ? 1 : 0
-    case '<=': return a <= b ? 1 : 0
-    case '>=': return a >= b ? 1 : 0
-    case '&&': return a !== 0 && b !== 0 ? 1 : 0
-    case '||': return a !== 0 || b !== 0 ? 1 : 0
-    case '+': return convert(a + b, type)
-    case '-': return convert(a - b, type)
-    case '*': return type === 'float' ? Math.fround(a * b) : convert(Math.imul(a, b), type)
-    case '/':
-      if (b === 0) throw new CodeError(line, 'codeError.divisionByZero')
-      return convert(a / b, type) // int division drops the fraction, like C
-    case '%':
-      if (type === 'float') throw new CodeError(line, 'codeError.modFloat')
-      if (b === 0) throw new CodeError(line, 'codeError.modByZero')
-      return a % b
-  }
 }
 
 /** Runs a parsed program from main() and records its steps. `input` holds the values for scanf, in order. */
@@ -400,7 +375,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     frames.push({ fn, scopes: [params], loops: [] })
     if (callFact) emit(fn.line, callFact, fn.params.map((p) => p.name))
 
-    // The parser only allows break and continue inside a loop, so only a return gets this far.
+    // The parser only allows break and continue inside a loop or switch, so only a return gets this far.
     const jump = runStatements(fn.body)
     const returned = jump?.kind === 'return' ? jump : null
     if (!returned) {
@@ -1483,13 +1458,16 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'for':
         return runLoop(stmt)
 
+      case 'switch':
+        return runSwitch(stmt)
+
       case 'break':
-        emit(stmt.line, { kind: 'break' })
+        emit(stmt.line, { kind: 'break', ofSwitch: stmt.ofSwitch })
         return { kind: 'break' }
 
       case 'continue': {
         const loop = frame().loops[frame().loops.length - 1]
-        emit(stmt.line, { kind: 'continue', toUpdate: loop.hasUpdate })
+        emit(stmt.line, { kind: 'continue', toUpdate: loop.hasUpdate, inSwitch: stmt.inSwitch })
         return { kind: 'continue' }
       }
 
@@ -1529,6 +1507,50 @@ export function execute(program: Program, input: string[] = []): Step[] {
     charCodes(text, line).forEach((c, i) => (slot.values[i] = c))
     slot.values[text.length] = 0
     access = { name, store: slot, active: null }
+  }
+
+  /**
+   * Compares the value with the case labels once, then runs the body from the label that matched to the
+   * end, or until a `break`: later labels are not checked, so code just carries on past them. Reaching one
+   * that way is a fall-through, and it gets its own step. A `continue` or `return` is passed on up.
+   */
+  function runSwitch(stmt: Extract<Stmt, { kind: 'switch' }>): Jump | null {
+    const value = evaluate(stmt.value)
+    if (value.type === 'float') throw new CodeError(stmt.line, 'codeError.switchNotInt', { value: toSource(stmt.value) })
+    const shown = formatNumber(value.value, value.type)
+    const entry = stmt.labels.find((label) => label.value === value.value) ?? stmt.labels.find((label) => label.value === null)
+    emit(stmt.line, { kind: 'switchCheck', value: { source: toSource(stmt.value), work: value.work, result: shown }, skipped: !entry })
+    if (!entry) return null
+
+    const labelsAt = (index: number) => stmt.labels.filter((label) => label.index === index)
+    const names = (labels: SwitchLabel[]) => labels.map((label) => code(label.text))
+    const current = frame()
+    current.scopes.push(new Map())
+    stmt.body.slice(0, entry.index).forEach(declareSkipped)
+    emit(entry.line, { kind: 'switchEnter', label: entry.text, isDefault: entry.value === null, value: shown, stacked: names(labelsAt(entry.index)) })
+
+    let jump: Jump | null = null
+    for (let i = entry.index; i <= stmt.body.length && !jump; i++) {
+      const reached = labelsAt(i)
+      if (i > entry.index && reached.length > 0) emit(reached[0].line, { kind: 'fallThrough', labels: names(reached) })
+      if (i < stmt.body.length) jump = run(stmt.body[i])
+    }
+    endScope(current.scopes.pop()!)
+    return jump?.kind === 'break' ? null : jump
+  }
+
+  /**
+   * C lets a switch jump past a declaration in its body: the variable exists from there on, but its
+   * initial value was never set. An `int a[] = {1, 2};` gets its size from what was jumped past, so it stays out.
+   */
+  function declareSkipped(stmt: Stmt) {
+    if (stmt.kind === 'declareStruct') {
+      for (const d of stmt.declarators) declareStruct(program.structs.get(stmt.structName)!, { ...d, values: null, copyOf: null })
+    }
+    if (stmt.kind !== 'declare') return
+    for (const d of stmt.declarators) {
+      if (!d.isArray || d.size) declare(stmt.type, { ...d, init: null, arrayInit: null, gridInit: null, stringInit: null })
+    }
   }
 
   function runLoop(stmt: Extract<Stmt, { kind: 'while' | 'for' }>): Jump | null {

@@ -9,7 +9,7 @@ import { syntaxTree } from '@codemirror/language'
 import { declaredNames } from './completionSource'
 
 // Only words the interpreter in src/engine/ actually runs (AGENTS.md § The Interpreter).
-// Nothing from the "Not supported" list belongs here: suggesting `switch` or `sqrt` would
+// Nothing from the "Not supported" list belongs here: suggesting `goto` or `sqrt` would
 // just lead a beginner straight into an "isn't supported yet" error.
 // `detail` says what the word is for; `info` is the side panel next to the highlighted
 // suggestion, showing how it's written. Both are plain English/code, not translated.
@@ -18,7 +18,15 @@ const completions: Completion[] = [
   { label: 'else', type: 'keyword', detail: 'else — run code when the if condition is false', info: 'else { ... }' },
   { label: 'for', type: 'keyword', detail: 'for — loop a fixed number of times', info: 'for (start; condition; step) { ... }' },
   { label: 'while', type: 'keyword', detail: 'while — loop as long as a condition is true', info: 'while (condition) { ... }' },
-  { label: 'break', type: 'keyword', detail: 'break — leave the innermost loop right away', info: 'break;' },
+  {
+    label: 'switch',
+    type: 'keyword',
+    detail: 'switch — start at the case that matches a value',
+    info: 'switch (value) {\n  case 1:\n    ...\n    break;\n  default:\n    ...\n}',
+  },
+  { label: 'case', type: 'keyword', detail: 'case — where a switch starts when the value matches', info: 'case 1:' },
+  { label: 'default', type: 'keyword', detail: 'default — where a switch starts when no case matches', info: 'default:' },
+  { label: 'break', type: 'keyword', detail: 'break — leave the innermost loop or switch right away', info: 'break;' },
   { label: 'continue', type: 'keyword', detail: 'continue — skip to the next iteration of the innermost loop', info: 'continue;' },
   { label: 'return', type: 'keyword', detail: 'return — send a value back from a function', info: 'return value;' },
   { label: 'int', type: 'type', detail: 'int — a whole number, like 5 or -2', info: 'int name = 5;' },

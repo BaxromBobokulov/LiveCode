@@ -70,6 +70,17 @@ export type StructDeclarator = {
 /** `struct Point { int x; int y; };` — the fields in the order they are declared. */
 export type StructDef = { name: string; fields: { name: string; type: NumType }[]; line: number }
 
+/** One `case 2:` or `default:` of a switch. */
+export type SwitchLabel = {
+  line: number
+  /** As written, e.g. "case 'A'" or "default". */
+  text: string
+  /** The case's value, or null for `default`. */
+  value: number | null
+  /** Where in the switch's `body` the code after this label starts. Stacked labels share one index. */
+  index: number
+}
+
 export type Stmt =
   | { kind: 'declare'; line: number; type: NumType; declarators: Declarator[] }
   /** `struct Point p;` — `structName` is "Point", which the parser has already checked is defined. */
@@ -92,8 +103,12 @@ export type Stmt =
    */
   | { kind: 'for'; line: number; init: Stmt[]; cond: Expr | null; update: Stmt[]; body: Stmt }
   | { kind: 'return'; line: number; value: Expr | null }
-  /** `break;` leaves the innermost loop; `continue;` jumps to its next check. */
-  | { kind: 'break' | 'continue'; line: number }
+  /** `body` is one flat list, so running on past a label is all a fall-through needs. */
+  | { kind: 'switch'; line: number; value: Expr; labels: SwitchLabel[]; body: Stmt[] }
+  /** `break;` leaves the innermost loop or switch (`ofSwitch`). */
+  | { kind: 'break'; line: number; ofSwitch: boolean }
+  /** `continue;` jumps to the next check of the innermost loop. `inSwitch`: it leaves a switch on the way. */
+  | { kind: 'continue'; line: number; inSwitch: boolean }
   | { kind: 'block'; line: number; body: Stmt[] }
 
 export type Param = {
@@ -202,12 +217,59 @@ export function formatNumber(value: number, type: NumType): string {
   return /[.e]/.test(text) ? text : `${text}.0`
 }
 
+export function convert(value: number, type: NumType): number {
+  if (type === 'float') return Math.fround(value)
+  // A char holds -128 to 127, so a bigger number wraps around, like in C.
+  return type === 'char' ? (Math.trunc(value) << 24) >> 24 : Math.trunc(value) | 0
+}
+
+export function arithmetic(op: BinaryOp, a: number, b: number, type: NumType, line: number): number {
+  switch (op) {
+    case '==': return a === b ? 1 : 0
+    case '!=': return a !== b ? 1 : 0
+    case '<': return a < b ? 1 : 0
+    case '>': return a > b ? 1 : 0
+    case '<=': return a <= b ? 1 : 0
+    case '>=': return a >= b ? 1 : 0
+    case '&&': return a !== 0 && b !== 0 ? 1 : 0
+    case '||': return a !== 0 || b !== 0 ? 1 : 0
+    case '+': return convert(a + b, type)
+    case '-': return convert(a - b, type)
+    case '*': return type === 'float' ? Math.fround(a * b) : convert(Math.imul(a, b), type)
+    case '/':
+      if (b === 0) throw new CodeError(line, 'codeError.divisionByZero')
+      return convert(a / b, type) // int division drops the fraction, like C
+    case '%':
+      if (type === 'float') throw new CodeError(line, 'codeError.modFloat')
+      if (b === 0) throw new CodeError(line, 'codeError.modByZero')
+      return a % b
+  }
+}
+
+/** The value of a case label, which C needs before the program runs: `3`, `'A'`, `-1` or `2 * 3`, but no variables. */
+function caseValue(expr: Expr): number {
+  switch (expr.kind) {
+    case 'number':
+      if (expr.type === 'float') throw new CodeError(expr.line, 'codeError.caseNotInt', { value: toSource(expr) })
+      return expr.value
+    case 'string':
+      throw new CodeError(expr.line, 'codeError.caseNotInt', { value: toSource(expr) })
+    case 'unary': {
+      const operand = caseValue(expr.operand)
+      return expr.op === '-' ? convert(-operand, 'int') : operand === 0 ? 1 : 0
+    }
+    case 'binary':
+      return arithmetic(expr.op, caseValue(expr.left), caseValue(expr.right), 'int', expr.line)
+    default:
+      throw new CodeError(expr.line, 'codeError.caseNotConstant', { value: toSource(expr) })
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Unsupported constructs
 // ---------------------------------------------------------------------------
 
 const onlyBasicTypes: Phrase = { key: 'unsupported.onlyBasicTypes' }
-const switchStatement: [Phrase, Phrase] = [{ key: 'construct.switch' }, { key: 'unsupported.switch' }]
 const qualifier = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.qualifier', values: { keyword } }]
 const notYet = (keyword: string): [Phrase, Phrase] => [code(keyword), { key: 'unsupported.keyword', values: { keyword } }]
 
@@ -221,9 +283,6 @@ const unsupportedKeywords: Record<string, [construct: Phrase, message: Phrase]> 
   enum: [code('enum'), { key: 'unsupported.enum' }],
   typedef: notYet('typedef'),
   do: [{ key: 'construct.doWhile' }, { key: 'unsupported.doWhile' }],
-  switch: switchStatement,
-  case: switchStatement,
-  default: switchStatement,
   goto: [code('goto'), { key: 'unsupported.goto' }],
   const: qualifier('const'),
   static: qualifier('static'),
@@ -350,8 +409,8 @@ export function parse(source: string): Program {
 
   const functions = new Map<string, FunctionDecl>()
   const structs = new Map<string, StructDef>()
-  /** How many loops the statement being parsed is inside, so a `break` outside any loop is caught. */
-  let loopDepth = 0
+  /** The loops and switches around the statement being parsed, innermost last: what a `break` or `continue` belongs to. */
+  const enclosing: ('loop' | 'switch')[] = []
   let usesPointers = false
 
   while (peek().kind !== 'eof') {
@@ -520,11 +579,22 @@ export function parse(source: string): Program {
     const token = peek()
     const line = token.line
 
-    if (is('break') || is('continue')) {
-      const keyword = advance().text as 'break' | 'continue'
-      if (loopDepth === 0) throw new CodeError(line, 'codeError.outsideLoop', { keyword })
+    if (accept('break')) {
+      if (enclosing.length === 0) throw new CodeError(line, 'codeError.breakOutside')
       expect(';')
-      return { kind: keyword, line }
+      return { kind: 'break', line, ofSwitch: enclosing.at(-1) === 'switch' }
+    }
+    if (accept('continue')) {
+      // A switch doesn't count: continue always belongs to a loop.
+      if (!enclosing.includes('loop')) throw new CodeError(line, 'codeError.outsideLoop', { keyword: 'continue' })
+      expect(';')
+      return { kind: 'continue', line, inSwitch: enclosing.at(-1) === 'switch' }
+    }
+
+    // parseSwitch reads the labels directly inside its { }, so one that gets here is somewhere else.
+    if (is('case') || is('default')) {
+      if (!enclosing.includes('switch')) throw new CodeError(line, 'codeError.outsideSwitch', { keyword: token.text })
+      throw new UnsupportedConstructError(line, { key: 'construct.caseNested' }, { key: 'unsupported.caseNested' })
     }
 
     rejectUnsupportedKeyword(token)
@@ -551,6 +621,8 @@ export function parse(source: string): Program {
       if (accept('else')) otherwise = parseStatement()
       return { kind: 'if', line, cond, then, otherwise }
     }
+
+    if (accept('switch')) return parseSwitch(line)
 
     if (accept('while')) {
       expect('(')
@@ -604,10 +676,50 @@ export function parse(source: string): Program {
 
   /** A loop's body, where `break` and `continue` are allowed. */
   function parseLoopBody(): Stmt {
-    loopDepth++
+    enclosing.push('loop')
     const body = parseStatement()
-    loopDepth--
+    enclosing.pop()
     return body
+  }
+
+  /** `switch (x) { case 1: ... default: ... }`, after the `switch` keyword. */
+  function parseSwitch(line: number): Stmt {
+    expect('(')
+    const value = parseText()
+    expect(')')
+    if (value.kind === 'string') throw new CodeError(line, 'codeError.switchNotInt', { value: toSource(value) })
+    if (!accept('{')) {
+      throw new UnsupportedConstructError(line, { key: 'construct.switchNoBraces' }, { key: 'unsupported.switchNoBraces' })
+    }
+
+    const labels: SwitchLabel[] = []
+    const body: Stmt[] = []
+    enclosing.push('switch')
+    while (!is('}')) {
+      if (peek().kind === 'eof') throw new CodeError(peek().line, 'codeError.unclosedBrace')
+      if (is('case') || is('default')) labels.push(parseSwitchLabel(labels, body.length))
+      else body.push(parseStatement())
+    }
+    enclosing.pop()
+    expect('}')
+    return { kind: 'switch', line, value, labels, body }
+  }
+
+  /** `case 2:` or `default:`. `index` is where the code after it starts in the switch's body. */
+  function parseSwitchLabel(labels: SwitchLabel[], index: number): SwitchLabel {
+    const { line, text } = advance()
+    if (text === 'default') {
+      if (labels.some((label) => label.value === null)) throw new CodeError(line, 'codeError.defaultTwice')
+      expect(':')
+      return { line, text, value: null, index }
+    }
+    const expr = parseText()
+    const value = convert(caseValue(expr), 'int')
+    expect(':')
+    // Compared by value, so `case 65:` and `case 'A':` are the same label.
+    const first = labels.find((label) => label.value === value)
+    if (first) throw new CodeError(line, 'codeError.caseTwice', { first: first.text })
+    return { line, text: `case ${toSource(expr)}`, value, index }
   }
 
   /** `int x = 1, arr[3] = {1, 2, 3}, grid[2][2] = {{1, 2}, {3, 4}};` — including the final ";". */
