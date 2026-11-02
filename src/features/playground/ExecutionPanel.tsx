@@ -11,6 +11,7 @@ import ArrayVisualizer from './ArrayVisualizer'
 import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
 import SpeedControl from './SpeedControl'
+import TextSizeControl from './TextSizeControl'
 import { useFollowChange } from './useFollowChange'
 import VariablesPanel from './VariablesPanel'
 
@@ -78,12 +79,16 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
       ref={ref}
       className={`flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100dvh-2.5rem)] ${className}`}
     >
-      <header className="flex h-11.75 shrink-0 items-center justify-between border-b border-border px-4.5">
+      {/* 47px tall like the other panel headers. On a narrow phone the step count, A− / A+ and Maximize
+          don't fit beside the title, so they wrap onto a second row, kept on the right. Only if even that row is
+          too narrow (320px, Uzbek) does the step count itself break into two lines. */}
+      <header className="flex min-h-11.75 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4.5 py-1">
         <h2 className="text-body-md font-semibold">{t('panel.execution')}</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-body-sm font-semibold text-textMuted">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          <span className="text-right text-body-sm font-semibold text-textMuted">
             {t('execution.stepOf', { current: stepIndex + 1, total: totalSteps })}
           </span>
+          <TextSizeControl />
           <MaximizeButton
             isMaximized={isMaximized}
             label={isMaximized ? t('layout.restore') : t('layout.expandExecution')}

@@ -336,7 +336,7 @@ Otherwise, always stick to Tailwind utilities.
 
 ## State Management Rules
 
-Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, the Code/Execution split ratio, the step explanation's text size (the A− / A+ buttons in the navbar), the Auto Play speed (0.5× / 1× / 1.5× / 2× next to the step controls), and the folded topics on the Problems screen — plus the unlocked badges, the dates of fully passing Checks and the passed problems' ids in `badgesStore` (see "Organizing the list" and "Badges (local only)" under Problems).
+Use Zustand for the playground state described above. Use local state for temporary, non-shared UI state. Playground state is not persisted — reloading resets to the first example's first step. The only things saved to localStorage are user preferences in `settingsStore`: theme, language, the Code/Execution split ratio, the step explanation's text size (the A− / A+ buttons in the Execution panel's header — there, not in the navbar, because they only change that panel's explanation), the Auto Play speed (0.5× / 1× / 1.5× / 2× next to the step controls), and the folded topics on the Problems screen — plus the unlocked badges, the dates of fully passing Checks and the passed problems' ids in `badgesStore` (see "Organizing the list" and "Badges (local only)" under Problems).
 
 ---
 
