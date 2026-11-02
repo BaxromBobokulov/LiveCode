@@ -39,6 +39,7 @@ const en = {
   'layout.restore': 'Restore the split view',
 
   'panel.execution': 'Execution',
+  'panel.executionDetails': 'Variables, array and console',
   'panel.variables': 'Variables',
   'variables.pointsTo': 'points to {name}',
   'variables.pointsToNothing': 'points to nothing',
@@ -566,6 +567,7 @@ const uz: Record<TranslationKey, string> = {
   'layout.restore': "Ikki panelli ko'rinishga qaytarish",
 
   'panel.execution': 'Bajarilish',
+  'panel.executionDetails': "O'zgaruvchilar, massiv va konsol",
   'panel.variables': "O'zgaruvchilar",
   'variables.pointsTo': "{name} ni ko'rsatadi",
   'variables.pointsToNothing': "hech narsani ko'rsatmaydi",
@@ -1096,6 +1098,7 @@ const ru: Record<TranslationKey, string> = {
   'layout.restore': 'Вернуть разделённый вид',
 
   'panel.execution': 'Выполнение',
+  'panel.executionDetails': 'Переменные, массив и консоль',
   'panel.variables': 'Переменные',
   'variables.pointsTo': 'указывает на {name}',
   'variables.pointsToNothing': 'ни на что не указывает',

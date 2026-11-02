@@ -132,6 +132,7 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
                   if (element) boxRefs.current.set(key, element)
                   else boxRefs.current.delete(key)
                 }}
+                data-step-change={isChanged || fieldChanged || undefined}
                 className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 transition-colors duration-200 motion-reduce:transition-none ${
                   isChanged ? 'border-accent bg-accentTint' : fieldChanged ? 'border-accent bg-panel' : 'border-border bg-panel'
                 }`}
@@ -168,6 +169,7 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
                 if (element) boxRefs.current.set(key, element)
                 else boxRefs.current.delete(key)
               }}
+              data-step-change={isChanged || undefined}
               // A caller's variable (shown while a function that points to it runs) gets a dashed border.
               className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 ${variable.scope ? 'border-dashed' : ''} transition-colors duration-200 motion-reduce:transition-none ${
                 isChanged ? 'border-accent bg-accentTint' : 'border-border bg-panel'

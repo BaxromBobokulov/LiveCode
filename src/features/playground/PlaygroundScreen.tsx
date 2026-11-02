@@ -1,3 +1,4 @@
+import type { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { animate, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -10,6 +11,7 @@ import { useSettingsStore } from '../../store/settingsStore'
 import ProblemPanel from '../problems/ProblemPanel'
 import EditorPanel from './EditorPanel'
 import ExecutionPanel from './ExecutionPanel'
+import { useFollowCurrentLine } from './useFollowCurrentLine'
 
 /**
  * After a short pause, scrolls the page so `element` sits at the top (minus its scroll-margin)
@@ -64,6 +66,7 @@ function PlaygroundScreen() {
   const layoutRef = useRef<HTMLDivElement>(null)
   const executionRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<ReactCodeMirrorRef>(null)
   const cancelScroll = useRef<(() => void) | null>(null)
   const reduceMotion = useReducedMotion()
   const splitRatio = useSettingsStore((state) => state.splitRatio)
@@ -73,6 +76,15 @@ function PlaygroundScreen() {
   const [maximized, setMaximized] = useState<PanelId | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const { t } = useTranslation()
+  useFollowCurrentLine(
+    editorRef,
+    layoutRef,
+    (cancel) => {
+      cancelScroll.current?.()
+      cancelScroll.current = cancel
+    },
+    maximized === 'execution',
+  )
 
   // Auto Play: move one step forward after a short pause, until the store stops playing.
   // A faster speed means a shorter pause; changing it mid-play restarts the current pause at the new length.
@@ -175,6 +187,7 @@ function PlaygroundScreen() {
       <EditorPanel
         onRun={handleRun}
         inputRef={inputRef}
+        editorRef={editorRef}
         isMaximized={maximized === 'editor'}
         onToggleMaximize={() => toggleMaximize('editor')}
         className={maximized === 'execution' ? 'hidden' : maximized === null ? editorSplitClass : ''}

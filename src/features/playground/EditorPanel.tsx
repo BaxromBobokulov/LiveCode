@@ -1,6 +1,6 @@
 import { acceptCompletion, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import CodeMirror, { Prec, keymap, lineNumbers } from '@uiw/react-codemirror'
+import CodeMirror, { Prec, keymap, lineNumbers, type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { useId, useMemo, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import Button from '../../components/Button'
@@ -29,6 +29,8 @@ type EditorPanelProps = {
   onRun: () => void
   /** The scanf Input field, so Run can scroll to it and focus it when it is missing values. */
   inputRef: RefObject<HTMLInputElement | null>
+  /** The editor, so a step can find where the current line is on the page. */
+  editorRef: RefObject<ReactCodeMirrorRef | null>
   /** Whether this panel is expanded to the full width; `onToggleMaximize` flips it. */
   isMaximized: boolean
   onToggleMaximize: () => void
@@ -36,7 +38,7 @@ type EditorPanelProps = {
   className?: string
 }
 
-function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className = '' }: EditorPanelProps) {
+function EditorPanel({ onRun, inputRef, editorRef, isMaximized, onToggleMaximize, className = '' }: EditorPanelProps) {
   const example = useCurrentExample()
   const stepIndex = usePlaygroundStore((state) => state.stepIndex)
   const reset = usePlaygroundStore((state) => state.reset)
@@ -110,6 +112,7 @@ function EditorPanel({ onRun, inputRef, isMaximized, onToggleMaximize, className
       {/* Editable: Run traces whatever is typed here. It fills the panel, so the dark surface
           ends level with the Execution panel even when the program is short. */}
       <CodeMirror
+        ref={editorRef}
         className="flex flex-1 flex-col [&_.cm-editor]:flex-1"
         value={code}
         onChange={setCode}

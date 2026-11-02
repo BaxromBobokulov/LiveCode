@@ -53,9 +53,10 @@ function ArrayCell({ value, chars, isActive, isAnimated }: CellProps) {
     isActive ? 'border-accent bg-accentTint' : 'border-border bg-panel'
   }`
   const text = cellText(value, chars)
-  if (!isAnimated) return <div className={cellClass}>{text}</div>
+  if (!isAnimated) return <div data-step-change={isActive || undefined} className={cellClass}>{text}</div>
   return (
     <motion.div
+      data-step-change={isActive || undefined}
       initial={inactiveColors}
       animate={isActive ? { ...activeColors, scale: [1, 1.08, 1] } : { ...inactiveColors, scale: 1 }}
       transition={transition}
@@ -116,7 +117,8 @@ function ArrayVisualizer({ array }: { array: ArrayView | GridView }) {
             const isActive = highlights(array, index)
             const isAnimated = !reduceMotion && (isActive || highlights(previous1D, index))
             return (
-              <div key={index} className="flex flex-col items-center gap-1">
+              // Marked as well as the cell, so following a change brings its index label into view too.
+              <div key={index} data-step-change={isActive || undefined} className="flex flex-col items-center gap-1">
                 <ArrayCell value={value} chars={!!array.chars} isActive={isActive} isAnimated={isAnimated} />
                 <IndexLabel index={index} isActive={isActive} isAnimated={isAnimated} />
               </div>

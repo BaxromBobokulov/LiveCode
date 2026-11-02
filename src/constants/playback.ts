@@ -9,3 +9,9 @@ export const RUN_SCROLL_DELAY_MS = 120
 
 /** How long that scroll takes, in seconds. */
 export const RUN_SCROLL_DURATION_S = 0.55
+
+/** How long the page takes to bring the current code line back on screen after a step, in seconds. */
+export const LINE_SCROLL_DURATION_S = 0.25
+
+/** How long the Execution panel's scrolling part takes to bring a step's change into view, in seconds. */
+export const CHANGE_SCROLL_DURATION_S = 0.2

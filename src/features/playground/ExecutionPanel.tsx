@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion'
-import type { Ref } from 'react'
+import { useRef, type Ref } from 'react'
 import Button from '../../components/Button'
 import MaximizeButton from '../../components/MaximizeButton'
 import ProgressBar from '../../components/ProgressBar'
@@ -11,6 +11,7 @@ import ArrayVisualizer from './ArrayVisualizer'
 import ConsolePanel from './ConsolePanel'
 import LoopTracker from './LoopTracker'
 import SpeedControl from './SpeedControl'
+import { useFollowChange } from './useFollowChange'
 import VariablesPanel from './VariablesPanel'
 
 type ExecutionPanelProps = {
@@ -53,10 +54,14 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const totalSteps = example.steps.length
   const isLastStep = stepIndex === totalSteps - 1
   const stepKey = `${example.id}-${stepIndex}`
+  const regionRef = useRef<HTMLDivElement>(null)
+  useFollowChange(regionRef, stepKey, stepIndex, traceStale)
   // Framer's reducedMotion="user" still fades opacity/colors, so skip these animations ourselves
   const reduceMotion = useReducedMotion()
-  // text-explanation follows the reader's A− / A+ choice (settingsStore)
-  const explanationClass = 'rounded-container border border-border bg-surface px-4.5 py-4 text-explanation text-text'
+  // text-explanation follows the reader's A− / A+ choice (settingsStore). Room for two lines of it plus the
+  // padding and border, so Variables below don't jump each time a step's explanation changes between 1 and 2 lines.
+  const explanationClass =
+    'min-h-[calc(2lh+2rem+2px)] rounded-container border border-border bg-surface px-4.5 py-4 text-explanation text-text'
   // Out of date with the code (see `staleness`): a dashed textMuted outline marks it until the next Run.
   // The text keeps its own colors, so every contrast pair inside stays as verified; the outline is
   // 4.97:1 (light) / 7.54:1 (dark) on the panel, over the 3:1 needed for a graphic.
@@ -66,11 +71,14 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const showStaleNote = runError ? errorStale : traceStale
 
   return (
+    // Side by side, the panel stays on screen while the page scrolls the code. It stops 2.5rem short of the
+    // screen height: 1rem above it (top-4) and the 1.5rem of padding under it (main's py-6), so it stays stuck
+    // all the way to the end of the page. Stretched by the row, so a short program's panels still end level.
     <section
       ref={ref}
-      className={`flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel ${className}`}
+      className={`flex min-w-0 flex-1 scroll-mt-4 flex-col rounded-panel border border-border bg-panel min-[1000px]:sticky min-[1000px]:top-4 min-[1000px]:max-h-[calc(100dvh-2.5rem)] ${className}`}
     >
-      <header className="flex h-11.75 items-center justify-between border-b border-border px-4.5">
+      <header className="flex h-11.75 shrink-0 items-center justify-between border-b border-border px-4.5">
         <h2 className="text-body-md font-semibold">{t('panel.execution')}</h2>
         <div className="flex items-center gap-3">
           <span className="text-body-sm font-semibold text-textMuted">
@@ -84,7 +92,9 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
         </div>
       </header>
 
-      <div className="flex flex-col gap-4.5 p-4.5">
+      {/* Pinned: what a student needs on every step. Side by side, Variables and the rest scroll under it.
+          Its height limit only matters on a short window with a long error, so the part below always gets some room. */}
+      <div className="flex shrink-0 flex-col gap-4.5 p-4.5 pb-0 min-[1000px]:max-h-[70dvh] min-[1000px]:overflow-y-auto min-[1000px]:border-b min-[1000px]:border-border min-[1000px]:pb-4.5">
         {/* The speed picker wraps onto its own line when the panel is too narrow for all four */}
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" className="flex-auto" onClick={prev} disabled={traceStale || stepIndex === 0}>
@@ -108,11 +118,6 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
           </p>
         )}
 
-        <div className={traceClass}>
-          <ProgressBar value={(stepIndex + 1) / totalSteps} />
-          <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
-        </div>
-
         {/* The last Run failed: say where and why. The previous trace stays below. */}
         {runError && (
           <div
@@ -134,6 +139,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
         )}
 
         <div className={traceClass}>
+          <ProgressBar value={(stepIndex + 1) / totalSteps} />
           {reduceMotion ? (
             <p aria-live="polite" className={explanationClass}>
               <PhraseText parts={phraseParts(step.explanation)} />
@@ -151,10 +157,22 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
               <PhraseText parts={phraseParts(step.explanation)} />
             </motion.p>
           )}
+        </div>
+      </div>
 
+      {/* tabIndex: a scrolling area has to be reachable from the keyboard. */}
+      <div
+        ref={regionRef}
+        tabIndex={0}
+        role="region"
+        aria-label={t('panel.executionDetails')}
+        className="min-h-0 flex-1 p-4.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent min-[1000px]:overflow-y-auto"
+      >
+        <div className={traceClass}>
+          <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
           {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
           {step.array && <ArrayVisualizer array={step.array} />}
-          <ConsolePanel output={step.output} />
+          <ConsolePanel output={step.output} isNew={stepIndex > 0 && step.output !== example.steps[stepIndex - 1].output} />
         </div>
       </div>
     </section>
