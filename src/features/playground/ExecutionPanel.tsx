@@ -169,9 +169,13 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
         className="min-h-0 flex-1 p-4.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent min-[1000px]:overflow-y-auto"
       >
         <div className={traceClass}>
-          <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
-          {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
-          {step.array && <ArrayVisualizer array={step.array} />}
+          {/* The canvas: where the program's state is drawn, on a dot grid. Boxes and cells keep their solid
+              panel fill, so the dots only show in the gaps between them. */}
+          <div className="flex flex-col gap-4.5 rounded-container border border-border bg-panel bg-dot-grid p-3.5">
+            <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
+            {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
+            {step.array && <ArrayVisualizer array={step.array} />}
+          </div>
           <ConsolePanel output={step.output} isNew={stepIndex > 0 && step.output !== example.steps[stepIndex - 1].output} />
         </div>
       </div>

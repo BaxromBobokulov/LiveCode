@@ -13,7 +13,7 @@ function LoopTracker({ loop, header }: LoopTrackerProps) {
   return (
     <div>
       <h3 className="mb-1.75 text-label text-textMuted">{t('panel.loop')}</h3>
-      <div className="rounded-container border border-border px-3.5 py-3">
+      <div className="rounded-container border border-border bg-panel px-3.5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <code className="font-mono text-body-sm text-text">{header.replace(/\s*\{$/, '')}</code>
           <span className="text-body-sm font-semibold text-text">

@@ -4,6 +4,13 @@
 @import "./theme/spacing.css";
 @import "./theme/radii.css";
 
+/* A faint dot grid (one 1px dot per 16px tile) behind the variables and arrays, so that area reads as a canvas.
+   A background image, not DOM elements, so it costs nothing per step. */
+@utility bg-dot-grid {
+  background-image: radial-gradient(circle, var(--color-canvasDot) 1px, transparent 1.5px);
+  background-size: 16px 16px;
+}
+
 @layer base {
   body {
     @apply bg-bg font-sans text-body-md text-text antialiased;

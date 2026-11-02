@@ -46,6 +46,10 @@
   --color-surface: #fafbfc; /* explanation box, console */
   --color-subtle: #f4f5f7; /* tab track */
   --color-track: #eef0f3; /* progress bar track */
+
+  /* Dots of the grid behind variables and arrays (bg-dot-grid). Decoration, not text: ~1.45:1 on the panel,
+     a step past border so 1px dots still show, but far below anything drawn on top. */
+  --color-canvasDot: #d0d5dc;
 }
 
 /* Dark theme — set by src/store/settingsStore.ts on <html data-theme="dark">.
@@ -87,4 +91,6 @@
   --color-surface: #1d2127;
   --color-subtle: #090b0e;
   --color-track: #2a2f37;
+
+  --color-canvasDot: #363c46; /* ~1.5:1 on the panel, a step past border like in light mode */
 }
