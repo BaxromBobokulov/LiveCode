@@ -28,6 +28,9 @@ export const dark = {
   selection: 'rgba(38, 79, 120, 0.85)',
   execLine: 'rgba(255, 255, 255, 0.07)',
   staleLine: 'rgba(255, 255, 255, 0.03)',
+  // The current line's left bar and gutter arrow: a lighter accent blue, since the accent itself is only
+  // 2.63:1 on execLine. This one is 4.18:1 there (5.11:1 on the plain background), over the 3:1 for a graphic.
+  execMarker: '#6886FF',
 
   // VS Code Dark+ suggestion dropdown
   popup: '#252526',
@@ -68,20 +71,37 @@ const editorChrome = EditorView.theme(
     },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '46px', padding: '0', textAlign: 'right' },
 
-    // The currently executing line: a subtle light overlay plus the same 3px accent bar as light mode.
+    // The currently executing line: a subtle light overlay plus a 3px blue bar, in execMarker's lighter blue.
     '.cm-execLine': { backgroundColor: dark.execLine },
-    '.cm-gutterElement.cm-execLine': { boxShadow: 'inset 3px 0 0 var(--color-accent)' },
+    '.cm-gutterElement.cm-execLine': { boxShadow: `inset 3px 0 0 ${dark.execMarker}`, position: 'relative' },
+    // Plus a debugger-style arrow left of the line number, so the line is found at a glance, not only by its tint.
+    // Line numbers are right-aligned in the 46px gutter, so even a 3-digit number leaves room for it.
+    '.cm-gutterElement.cm-execLine::before': {
+      content: '""',
+      position: 'absolute',
+      left: '8px',
+      top: '50%',
+      width: '9px',
+      height: '12px',
+      marginTop: '-6px',
+      backgroundColor: dark.execMarker,
+      clipPath: 'polygon(0 0, 45% 0, 100% 50%, 45% 100%, 0 100%)',
+    },
     // The same line in the error tone, when the last Run stopped on a CodeError/UnsupportedConstructError.
     // A 7% mix of the error token, like execLine's 7% white (errorTint is a light-mode fill). It keeps
     // every syntax color at 4.5:1 or more; the line number turns text-colored, as dimmed gray it would not.
     '.cm-execLine-error': { backgroundColor: 'color-mix(in srgb, var(--color-error) 7%, transparent)' },
     '.cm-gutterElement.cm-execLine-error': { boxShadow: 'inset 3px 0 0 var(--color-error)', color: dark.text },
+    // The arrow marks where the Run stopped, in the error tone: 4.15:1 (light) / 5.47:1 (dark) on this line.
+    '.cm-gutterElement.cm-execLine-error::before': { backgroundColor: 'var(--color-error)' },
     // Either tone, once the code was edited after it was made (the line may now hold different code):
     // a fainter overlay and a gray bar, so it reads as "out of date". After the two rules above, so it wins.
     // On this overlay the dimmed line number would be 4.15:1, so it turns text-colored (10.34:1) like the
     // error tone; the gray bar is a graphic, 4.15:1 against the 3:1 non-text minimum.
     '.cm-execLine-stale': { backgroundColor: dark.staleLine },
     '.cm-gutterElement.cm-execLine-stale': { boxShadow: `inset 3px 0 0 ${dark.lineNumber}`, color: dark.text },
+    // No arrow on a stale line: it would claim this is where the program is, and the line may now hold other code.
+    '.cm-gutterElement.cm-execLine-stale::before': { display: 'none' },
 
     // Autocomplete dropdown, styled like VS Code's suggestion list.
     '.cm-tooltip.cm-tooltip-autocomplete': {

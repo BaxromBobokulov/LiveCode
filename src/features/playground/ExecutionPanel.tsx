@@ -13,6 +13,7 @@ import LoopTracker from './LoopTracker'
 import SpeedControl from './SpeedControl'
 import TextSizeControl from './TextSizeControl'
 import { useFollowChange } from './useFollowChange'
+import { useGrowOnlyHeight } from './useGrowOnlyHeight'
 import VariablesPanel from './VariablesPanel'
 
 type ExecutionPanelProps = {
@@ -56,11 +57,22 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const isLastStep = stepIndex === totalSteps - 1
   const stepKey = `${example.id}-${stepIndex}`
   const regionRef = useRef<HTMLDivElement>(null)
+  const detailsRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const explanationRef = useRef<HTMLDivElement>(null)
+  // Boxes coming and going between steps don't resize the explanation, the canvas or the panel (see
+  // useGrowOnlyHeight). All run before useFollowChange, so it measures the area at its final size.
+  useGrowOnlyHeight(explanationRef, example, stepKey)
+  useGrowOnlyHeight(canvasRef, example, stepKey)
+  useGrowOnlyHeight(detailsRef, example, stepKey)
   useFollowChange(regionRef, stepKey, stepIndex, traceStale)
+  // A program with a loop keeps the loop's card on every step (empty outside the loop), so what is below stays put.
+  const hasLoop = example.steps.some((other) => other.loop)
   // Framer's reducedMotion="user" still fades opacity/colors, so skip these animations ourselves
   const reduceMotion = useReducedMotion()
   // text-explanation follows the reader's A− / A+ choice (settingsStore). Room for two lines of it plus the
   // padding and border, so Variables below don't jump each time a step's explanation changes between 1 and 2 lines.
+  // A longer one makes the box grow once, and it stays that tall for the rest of the trace (useGrowOnlyHeight).
   const explanationClass =
     'min-h-[calc(2lh+2rem+2px)] rounded-container border border-border bg-surface px-4.5 py-4 text-explanation text-text'
   // Out of date with the code (see `staleness`): a dashed textMuted outline marks it until the next Run.
@@ -145,23 +157,24 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
 
         <div className={traceClass}>
           <ProgressBar value={(stepIndex + 1) / totalSteps} />
-          {reduceMotion ? (
-            <p aria-live="polite" className={explanationClass}>
-              <PhraseText parts={phraseParts(step.explanation)} />
-            </p>
-          ) : (
-            // A new key each step remounts the box, so a fast step replaces the fade instead of queuing behind it
-            <motion.p
-              key={stepKey}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
-              aria-live="polite"
-              className={explanationClass}
-            >
-              <PhraseText parts={phraseParts(step.explanation)} />
-            </motion.p>
-          )}
+          {/* The box stays mounted, so it keeps the height it grew to; only the text inside fades in. */}
+          <div ref={explanationRef} aria-live="polite" className={explanationClass}>
+            {reduceMotion ? (
+              <p>
+                <PhraseText parts={phraseParts(step.explanation)} />
+              </p>
+            ) : (
+              // A new key each step remounts the text, so a fast step replaces the fade instead of queuing behind it
+              <motion.p
+                key={stepKey}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+              >
+                <PhraseText parts={phraseParts(step.explanation)} />
+              </motion.p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -173,12 +186,14 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
         aria-label={t('panel.executionDetails')}
         className="min-h-0 flex-1 p-4.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent min-[1000px]:overflow-y-auto"
       >
-        <div className={traceClass}>
+        <div ref={detailsRef} className={traceClass}>
           {/* The canvas: where the program's state is drawn, on a dot grid. Boxes and cells keep their solid
-              panel fill, so the dots only show in the gaps between them. */}
-          <div className="flex flex-col gap-4.5 rounded-container border border-border bg-panel bg-dot-grid p-3.5">
+              panel fill, so the dots only show in the gaps between them (and in room left by a box that went away). */}
+          <div ref={canvasRef} className="flex flex-col gap-4.5 rounded-container border border-border bg-panel bg-dot-grid p-3.5">
             <VariablesPanel variables={step.variables} changed={step.changed} stepKey={stepKey} />
-            {step.loop && <LoopTracker loop={step.loop} header={example.code[step.loop.line - 1].trim()} />}
+            {hasLoop && (
+              <LoopTracker loop={step.loop} header={step.loop ? example.code[step.loop.line - 1].trim() : ''} />
+            )}
             {step.array && <ArrayVisualizer array={step.array} />}
           </div>
           <ConsolePanel output={step.output} isNew={stepIndex > 0 && step.output !== example.steps[stepIndex - 1].output} />
