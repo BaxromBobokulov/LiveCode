@@ -14,6 +14,8 @@ type AnalyticsEvents = {
   code_run_error:
     | { errorType: 'CodeError' }
     | { errorType: 'UnsupportedConstructError'; construct: string; messageKey: string }
+  // Run asked for scanf values before running: the Input field was empty, or had some but not enough.
+  scanf_input_prompt_shown: { reason: 'empty' | 'notEnough' }
   language_changed: { language: Locale }
   theme_changed: { theme: Theme }
 }

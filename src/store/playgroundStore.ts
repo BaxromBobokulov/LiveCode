@@ -231,8 +231,10 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
       const result = runUserCode(code, input)
       const missing = 'error' in result ? missingInputPhrase(result.error) : null
       if (!missing) return false
+      const given = Number(missing.values?.given)
+      track('scanf_input_prompt_shown', { reason: given === 0 ? 'empty' : 'notEnough' })
       set({
-        inputPrompt: { needed: Number(missing.values?.needed), given: Number(missing.values?.given) },
+        inputPrompt: { needed: Number(missing.values?.needed), given },
         inputCollapsed: false,
         isPlaying: false,
       })
