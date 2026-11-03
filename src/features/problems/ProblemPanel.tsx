@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Button from '../../components/Button'
 import Chip from '../../components/Chip'
+import Tooltip from '../../components/Tooltip'
 import { TELEGRAM_GROUP_URL } from '../../constants/links'
 import type { Problem } from '../../data/problems/types'
 import { UnsupportedConstructError, missingInputPhrase } from '../../engine/errors'
@@ -145,18 +146,19 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
   function runWithInputAction(testCase: CaseResult) {
     if (testCase.passed || testCase.input === '') return null
     return (
-      <button
-        type="button"
-        onClick={() => onRunWithInput(testCase.input)}
-        aria-label={t('check.runWithInput')}
-        title={t('check.runWithInput')}
-        className="-my-3 inline-flex min-h-11 items-center gap-1 rounded-control px-1.5 font-semibold text-accentText hover:underline focus-visible:outline-2 focus-visible:outline-accent"
-      >
-        <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3">
-          <path d="M3 2v8l7-4z" fill="currentColor" />
-        </svg>
-        {t('button.run')}
-      </button>
+      <Tooltip label={t('check.runWithInput')}>
+        <button
+          type="button"
+          onClick={() => onRunWithInput(testCase.input)}
+          aria-label={t('check.runWithInput')}
+          className="-my-3 inline-flex min-h-11 items-center gap-1 rounded-control px-1.5 font-semibold text-accentText hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3">
+            <path d="M3 2v8l7-4z" fill="currentColor" />
+          </svg>
+          {t('button.run')}
+        </button>
+      </Tooltip>
     )
   }
 

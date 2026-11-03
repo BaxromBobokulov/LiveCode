@@ -1,3 +1,4 @@
+import Tooltip from '../../components/Tooltip'
 import { useTranslation } from '../../i18n/useTranslation'
 import { explanationSizes, useSettingsStore } from '../../store/settingsStore'
 
@@ -19,17 +20,17 @@ function TextSizeControl() {
     <div role="group" aria-label={t('settings.textSize')} className="inline-flex h-9 shrink-0 rounded-panel bg-subtle p-0.75">
       {buttons.map(({ direction, label, text, textClass, atLimit }) => (
         // The ::before is an invisible 44px-tall hit area centered on the 30px button, as in SpeedControl
-        <button
-          key={direction}
-          type="button"
-          aria-label={label}
-          title={label}
-          disabled={atLimit}
-          onClick={() => stepSize(direction)}
-          className={`relative min-w-7.5 rounded-control px-1.5 font-semibold text-textMuted transition-colors before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''] enabled:hover:bg-panel enabled:hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 ${textClass}`}
-        >
-          {text}
-        </button>
+        <Tooltip key={direction} label={label}>
+          <button
+            type="button"
+            aria-label={label}
+            disabled={atLimit}
+            onClick={() => stepSize(direction)}
+            className={`relative min-w-7.5 rounded-control px-1.5 font-semibold text-textMuted transition-colors before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''] enabled:hover:bg-panel enabled:hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 ${textClass}`}
+          >
+            {text}
+          </button>
+        </Tooltip>
       ))}
     </div>
   )

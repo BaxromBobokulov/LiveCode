@@ -198,7 +198,6 @@ function PlaygroundScreen() {
         <button
           type="button"
           aria-label={t('layout.resize')}
-          title={t('layout.resize')}
           onPointerDown={handleDividerPointerDown}
           onPointerMove={handleDividerPointerMove}
           onLostPointerCapture={() => setIsDragging(false)}
