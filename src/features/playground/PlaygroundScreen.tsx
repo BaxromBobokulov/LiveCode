@@ -61,6 +61,7 @@ function PlaygroundScreen() {
   const next = usePlaygroundStore((state) => state.next)
   const run = usePlaygroundStore((state) => state.run)
   const setInput = usePlaygroundStore((state) => state.setInput)
+  const promptForInput = usePlaygroundStore((state) => state.promptForInput)
   const problemId = usePlaygroundStore((state) => state.problemId)
   const problem = problemId === null ? undefined : getProblem(problemId)
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -126,8 +127,24 @@ function PlaygroundScreen() {
     else cancelScroll.current = scrollToElement(panel)
   }
 
+  // The Run button (and Enter in the Input field): code that would run out of scanf values points the
+  // student at the Input field first, instead of failing with an error they may not connect to it.
+  // Pressing Run again with the prompt up runs anyway, so the existing error is still there as a fallback.
+  function handleRunButton() {
+    if (!flushSync(promptForInput)) return handleRun()
+    cancelScroll.current?.()
+    const inputField = inputRef.current
+    if (!inputField) return
+    inputField.focus({ preventScroll: true })
+    // The field's row, with the message under the field. Already fully on screen, it isn't scrolled to.
+    const row = inputField.parentElement ?? inputField
+    if (reduceMotion) row.scrollIntoView({ block: 'nearest' })
+    else cancelScroll.current = scrollToElement(row, 'center')
+  }
+
   // "Run with this input" on a failed Check case: exactly as if the student typed the case's input into
-  // the Input field and pressed Run.
+  // the Input field and pressed Run, but without asking for missing values first: they come from the test case,
+  // so a program that runs out of them needs the error that explains it.
   function handleRunWithInput(value: string) {
     setInput(value)
     handleRun()
@@ -185,7 +202,7 @@ function PlaygroundScreen() {
       className={`flex flex-col gap-5 min-[1000px]:flex-row min-[1000px]:gap-0 ${isDragging ? 'select-none' : ''}`}
     >
       <EditorPanel
-        onRun={handleRun}
+        onRun={handleRunButton}
         inputRef={inputRef}
         editorRef={editorRef}
         isMaximized={maximized === 'editor'}

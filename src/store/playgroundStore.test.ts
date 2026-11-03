@@ -84,6 +84,59 @@ describe('playgroundStore run / reset', () => {
   })
 })
 
+describe('playgroundStore asking for Input before Run', () => {
+  beforeEach(() => store.setState(store.getInitialState(), true))
+
+  const readsTwo = lines('int main() {', '    int a, b;', '    scanf("%d %d", &a, &b);', '    return 0;', '}')
+
+  it('asks for values when the code would run out of them, and a second Run runs anyway', () => {
+    store.getState().setCode(readsTwo)
+    expect(store.getState().promptForInput()).toBe(true)
+    expect(store.getState().inputPrompt).toEqual({ needed: 1, given: 0 })
+    expect(store.getState().runError).toBeNull()
+
+    expect(store.getState().promptForInput()).toBe(false)
+    store.getState().run()
+    expect(store.getState().inputMissing).toBe(true)
+    expect(store.getState().inputPrompt).toBeNull()
+  })
+
+  it('counts values that are there but not enough, and typing clears the prompt', () => {
+    store.getState().setCode(readsTwo)
+    store.getState().setInput('5')
+    expect(store.getState().promptForInput()).toBe(true)
+    expect(store.getState().inputPrompt).toEqual({ needed: 2, given: 1 })
+
+    store.getState().setInput('5 7')
+    expect(store.getState().inputPrompt).toBeNull()
+    expect(store.getState().promptForInput()).toBe(false)
+  })
+
+  it("doesn't ask when the values are there, or when the scanf isn't reached", () => {
+    store.getState().setCode(readsTwo)
+    store.getState().setInput('5 7')
+    expect(store.getState().promptForInput()).toBe(false)
+
+    const neverReads = lines('int main() {', '    int a = 0;', '    if (a > 1) {', '        scanf("%d", &a);', '    }', '    return 0;', '}')
+    store.getState().setCode(neverReads)
+    store.getState().setInput('')
+    expect(store.getState().promptForInput()).toBe(false)
+    expect(store.getState().inputPrompt).toBeNull()
+  })
+
+  it('opens a collapsed Input field so it can show the prompt', () => {
+    const readsOne = lines('int main() {', '    int a;', '    scanf("%d", &a);', '    return 0;', '}')
+    store.getState().setCode(readsOne)
+    store.getState().setInput('5')
+    store.getState().run()
+    expect(store.getState().inputCollapsed).toBe(true)
+
+    store.getState().setCode(readsTwo)
+    expect(store.getState().promptForInput()).toBe(true)
+    expect(store.getState().inputCollapsed).toBe(false)
+  })
+})
+
 describe('playgroundStore stale trace', () => {
   beforeEach(() => store.setState(store.getInitialState(), true))
 

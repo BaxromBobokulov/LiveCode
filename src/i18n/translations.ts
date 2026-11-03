@@ -33,6 +33,10 @@ const en = {
   'editor.input': 'Input',
   'editor.inputHint': 'Values for scanf, separated by spaces, e.g. 5 2.5',
   'editor.inputEdit': 'Edit',
+  'editor.inputNeeded': 'This program needs input values. Type them here, separated by spaces, then press Run.',
+  'editor.inputNeedsMore':
+    'This program needs more input values: scanf asks for value number {needed}, but there are only {given}. Type the rest here, then press Run.',
+  'editor.inputRunAnyway': 'Press Run again to run it anyway.',
   'layout.resize': 'Resize panels. Use the left and right arrow keys.',
   'layout.expandEditor': 'Expand the code editor',
   'layout.expandExecution': 'Expand the Execution panel',
@@ -562,6 +566,11 @@ const uz: Record<TranslationKey, string> = {
   'editor.input': 'Kiritish',
   'editor.inputHint': "scanf uchun qiymatlar, bo'sh joy bilan ajratilgan, masalan 5 2.5",
   'editor.inputEdit': "O'zgartirish",
+  'editor.inputNeeded':
+    "Bu dastur qiymat kiritishni talab qiladi. Qiymatlarni shu yerga bo'sh joy bilan ajratib yozing, so'ng Ishga tushirish tugmasini bosing.",
+  'editor.inputNeedsMore':
+    "Bu dasturga ko'proq qiymat kerak: scanf {needed}-qiymatni so'raydi, lekin bu yerda faqat {given} ta qiymat bor. Qolganini shu yerga yozing, so'ng Ishga tushirish tugmasini bosing.",
+  'editor.inputRunAnyway': 'Baribir ishga tushirish uchun Ishga tushirish tugmasini yana bosing.',
   'layout.resize': "Panellar o'lchamini o'zgartirish. Chap va o'ng strelka tugmalaridan foydalaning.",
   'layout.expandEditor': 'Kod muharririni kengaytirish',
   'layout.expandExecution': 'Bajarilish panelini kengaytirish',
@@ -1094,6 +1103,10 @@ const ru: Record<TranslationKey, string> = {
   'editor.input': 'Ввод',
   'editor.inputHint': 'Значения для scanf через пробел, например 5 2.5',
   'editor.inputEdit': 'Изменить',
+  'editor.inputNeeded': 'Этой программе нужны входные данные. Введите значения сюда через пробел и нажмите «Запустить».',
+  'editor.inputNeedsMore':
+    'Этой программе нужно больше значений: scanf запрашивает значение номер {needed}, а здесь их только {given}. Введите остальные сюда и нажмите «Запустить».',
+  'editor.inputRunAnyway': 'Чтобы всё равно запустить, нажмите «Запустить» ещё раз.',
   'layout.resize': 'Изменить размер панелей. Используйте стрелки влево и вправо.',
   'layout.expandEditor': 'Развернуть редактор кода',
   'layout.expandExecution': 'Развернуть панель выполнения',

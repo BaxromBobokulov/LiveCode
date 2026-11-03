@@ -48,11 +48,13 @@ function EditorPanel({ onRun, inputRef, editorRef, isMaximized, onToggleMaximize
   const setInput = usePlaygroundStore((state) => state.setInput)
   const inputMissing = usePlaygroundStore((state) => state.inputMissing)
   const inputCollapsed = usePlaygroundStore((state) => state.inputCollapsed)
+  const inputPrompt = usePlaygroundStore((state) => state.inputPrompt)
   const expandInput = usePlaygroundStore((state) => state.expandInput)
   const runError = usePlaygroundStore((state) => state.runError)
   const problemId = usePlaygroundStore((state) => state.problemId)
   const { t, exampleText, locale } = useTranslation()
   const inputId = useId()
+  const promptId = useId()
 
   const { traceStale, errorStale } = useStaleness()
 
@@ -151,8 +153,9 @@ function EditorPanel({ onRun, inputRef, editorRef, isMaximized, onToggleMaximize
           </span>
         </button>
       )}
+      {/* The row also holds the "needs input" message, so scrolling to the row brings both on screen. */}
       {usesScanf(code) && !inputCollapsed && (
-        <div className="flex items-center gap-2.5 border-t border-border px-4.5 py-3">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-t border-border px-4.5 py-3">
           <label htmlFor={inputId} className="text-body-sm font-semibold text-text">
             {t('editor.input')}
           </label>
@@ -172,13 +175,27 @@ function EditorPanel({ onRun, inputRef, editorRef, isMaximized, onToggleMaximize
             spellCheck={false}
             autoComplete="off"
             aria-invalid={inputMissing}
+            aria-describedby={inputPrompt ? promptId : undefined}
             ref={inputRef}
             // Red while Run is waiting for values here; typing or a successful Run clears it.
+            // Accent while Run asks for values before running (inputPrompt); typing clears it too.
             // The background stays bg-panel: the placeholder (textMuted) is under 4.5:1 on errorTint.
             className={`h-9 min-w-0 flex-1 scroll-mt-4 rounded-control border bg-panel px-3.5 font-mono text-body-sm text-text transition-colors placeholder:text-textMuted focus-visible:outline-2 ${
-              inputMissing ? 'border-error outline-2 outline-error' : 'border-borderStrong focus-visible:outline-accent'
+              inputMissing
+                ? 'border-error outline-2 outline-error'
+                : inputPrompt
+                  ? 'border-accent outline-2 outline-accent'
+                  : 'border-borderStrong focus-visible:outline-accent'
             }`}
           />
+          {inputPrompt && (
+            <p id={promptId} role="status" className="basis-full text-body-sm text-text">
+              <span className="font-semibold text-accentText">
+                {inputPrompt.given === 0 ? t('editor.inputNeeded') : t('editor.inputNeedsMore', inputPrompt)}
+              </span>{' '}
+              <span className="text-textMuted">{t('editor.inputRunAnyway')}</span>
+            </p>
+          )}
         </div>
       )}
     </section>

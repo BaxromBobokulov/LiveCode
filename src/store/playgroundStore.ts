@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { examples, getExample } from '../data/examples'
 import { getProblem, problems } from '../data/problems'
 import type { Problem } from '../data/problems/types'
-import { UnsupportedConstructError, constructName, isMissingInput, type RunError } from '../engine/errors'
+import { UnsupportedConstructError, constructName, isMissingInput, missingInputPhrase, type RunError } from '../engine/errors'
 import { runUserCode, usesScanf } from '../engine/interpreter'
 import { checkSolution, type CheckResult } from '../features/problems/checkSolution'
 import { pickRandomProblem } from '../features/problems/problemList'
@@ -31,6 +31,11 @@ type PlaygroundState = {
   inputMissing: boolean
   /** The Input field is folded into a one-line summary of its values, after a Run that used them. */
   inputCollapsed: boolean
+  /**
+   * Run was pressed, but the code would run out of Input values, so it asked for them instead of running.
+   * `needed` is the value scanf would stop at, `given` how many the field has. Typing, an edit or any Run clears it.
+   */
+  inputPrompt: { needed: number; given: number } | null
   /** The problem open in the Playground (its statement and Check show above the editor), or null for an example. */
   problemId: string | null
   /** What the last Check found. Kept after an edit, so the student can compare while fixing their code. */
@@ -55,6 +60,12 @@ type PlaygroundState = {
   setInput: (input: string) => void
   /** Open the collapsed Input summary back into the editable field. */
   expandInput: () => void
+  /**
+   * Called before Run. If the code would run out of Input values, sets `inputPrompt` (field opened up) and
+   * returns true, so the caller shows the field instead of running. With the prompt already up for this
+   * code and input, returns false: a second Run runs anyway.
+   */
+  promptForInput: () => boolean
   next: () => void
   prev: () => void
   /**
@@ -113,6 +124,11 @@ export function staleness(
   }
 }
 
+/** Unchanged example code plays its hand-authored trace on Run. A problem always traces the student's code. */
+function playsExampleTrace(code: string, exampleId: string, problemId: string | null): boolean {
+  return problemId === null && code === getExample(exampleId).code.join('\n')
+}
+
 export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
   const lastStepIndex = () => currentProgram(get()).steps.length - 1
 
@@ -128,6 +144,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     input: '',
     inputMissing: false,
     inputCollapsed: false,
+    inputPrompt: null,
     problemId: null,
     checkResult: null,
     checkedCode: null,
@@ -146,6 +163,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         failedCode: null,
         inputMissing: false,
         inputCollapsed: false,
+        inputPrompt: null,
         stepIndex: 0,
         isPlaying: false,
         activeTab: 'playground',
@@ -169,6 +187,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         input: '',
         inputMissing: false,
         inputCollapsed: false,
+        inputPrompt: null,
         stepIndex: 0,
         isPlaying: false,
         activeTab: 'playground',
@@ -198,12 +217,27 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
 
     // An edit can leave the trace on screen out of date, so auto play stops.
     setCode: (code) => {
-      if (code !== get().code) set({ code, isPlaying: false })
+      if (code !== get().code) set({ code, isPlaying: false, inputPrompt: null })
     },
 
-    setInput: (input) => set({ input, inputMissing: false }),
+    setInput: (input) => set({ input, inputMissing: false, inputPrompt: null }),
 
     expandInput: () => set({ inputCollapsed: false }),
+
+    // A trial run finds out exactly whether scanf would run out, also for a scanf only some paths reach.
+    promptForInput: () => {
+      const { code, exampleId, input, problemId, inputPrompt } = get()
+      if (inputPrompt || !usesScanf(code) || playsExampleTrace(code, exampleId, problemId)) return false
+      const result = runUserCode(code, input)
+      const missing = 'error' in result ? missingInputPhrase(result.error) : null
+      if (!missing) return false
+      set({
+        inputPrompt: { needed: Number(missing.values?.needed), given: Number(missing.values?.given) },
+        inputCollapsed: false,
+        isPlaying: false,
+      })
+      return true
+    },
 
     // Stepping is off while the trace no longer matches the code; only a Run makes a new one.
     next: () => {
@@ -228,14 +262,14 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         input: '',
         inputMissing: false,
         inputCollapsed: false,
+        inputPrompt: null,
       }),
 
     run: () => {
       const { code, exampleId, input, problemId } = get()
-      const example = getExample(exampleId)
+      set({ inputPrompt: null })
 
-      // Unchanged example code plays its hand-authored trace. A problem always traces the student's code.
-      if (problemId === null && code === example.code.join('\n')) {
+      if (playsExampleTrace(code, exampleId, problemId)) {
         track('code_run', { source: 'example' })
         set({ userProgram: null, runError: null, failedCode: null, inputMissing: false, stepIndex: 0, isPlaying: true })
         return
