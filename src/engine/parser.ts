@@ -29,13 +29,20 @@ export type Expr =
   | { kind: 'address'; line: number; name: string }
   /** `NULL`: the empty pointer, which points to nothing. */
   | { kind: 'null'; line: number }
-  /** `p.x`: one field of the struct variable `name`. Only a variable's name can come before the `.`. */
-  | { kind: 'field'; line: number; name: string; field: string }
+  /**
+   * A struct field reached from the variable `name`, through the accessors in `path`: `p.x`, `p->x`,
+   * `students[i].gpa`, `s.marks[j]`, `a.born.day`. `path` always holds at least one field.
+   * `deref` marks `(*p).x`, which is the same as `p->x` but written the long way.
+   */
+  | { kind: 'member'; line: number; name: string; path: Accessor[]; deref?: true }
   /** `sizeof(int)`, or `sizeof(x)` / `sizeof(arr)` / `sizeof(arr[i])` / `sizeof(grid[i])` / `sizeof(grid[i][j])`. */
   | { kind: 'sizeof'; line: number; of: NumType | Extract<Expr, { kind: 'var' | 'index' | 'cell' }> }
 
-/** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]`, `*p` or `p.x`. */
-export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' | 'field' }>
+/** One step of a member path: `.x` / `->x`, or `[i]`. */
+export type Accessor = { kind: 'field'; field: string; arrow: boolean } | { kind: 'index'; index: Expr }
+
+/** Something that can be assigned to: `x`, `arr[i]`, `grid[i][j]`, `*p`, or a field like `p.x` / `students[i].gpa`. */
+export type Target = Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'deref' | 'member' }>
 
 export type Declarator = {
   line: number
@@ -57,18 +64,55 @@ export type Declarator = {
   stringInit: string | null
 }
 
-/** One variable in `struct Point p, q = {1, 2}, r = p;`. */
+/**
+ * What comes after `=` in a struct declaration: a `{ ... }` list (whose items can be lists again, for an
+ * array field, a nested struct or an element of an array of structs), a "string" for a char array
+ * field, or an ordinary expression.
+ */
+export type Init =
+  | { kind: 'list'; line: number; items: Init[] }
+  | { kind: 'string'; line: number; text: string }
+  | { kind: 'expr'; line: number; expr: Expr }
+
+/** One variable in `struct Point p, q = {1, 2}, r = p, *ptr = &p, pts[3];`. */
 export type StructDeclarator = {
   line: number
   name: string
-  /** `= {1, 2}`: values for the fields, in the order the fields are declared. */
-  values: Expr[] | null
-  /** `= p`: another struct variable to copy every field from. */
-  copyOf: Expr | null
+  /** `struct Point *ptr`: a pointer to a struct. */
+  isPointer: boolean
+  /** `struct Point pts[3]` or `pts[]`: an array of structs. */
+  isArray: boolean
+  /** The array size from `pts[3]`, or null for `pts[]` and a single struct. */
+  size: Expr | null
+  /**
+   * `= {1, 2}` fills the fields in order (for an array, one `{ }` per element); `= p` or `= make()` copies
+   * another struct; for a pointer, `= &p` or `= NULL`.
+   */
+  init: Init | null
 }
 
+/**
+ * One field of a struct: an int / float / char, a 1D array of one of those (`int marks[3];`, `char name[20];`),
+ * or a struct defined above (`struct Date born;`).
+ */
+export type FieldDef =
+  | { kind: 'scalar'; name: string; type: NumType }
+  | { kind: 'array'; name: string; type: NumType; size: number }
+  | { kind: 'struct'; name: string; def: StructDef }
+
 /** `struct Point { int x; int y; };` — the fields in the order they are declared. */
-export type StructDef = { name: string; fields: { name: string; type: NumType }[]; line: number }
+export type StructDef = { name: string; fields: FieldDef[]; line: number }
+
+/** A variable's or parameter's type: int / float / char, or a struct type. */
+export type ValueType = NumType | StructDef
+
+/** A type as C writes it: "int", or "struct Point". */
+export function typeText(type: ValueType): string {
+  return typeof type === 'string' ? type : `struct ${type.name}`
+}
+
+/** Largest array (in total cells, for a 2D array) the array view can reasonably show. */
+export const MAX_ARRAY_SIZE = 100
 
 /** One `case 2:` or `default:` of a switch. */
 export type SwitchLabel = {
@@ -113,7 +157,8 @@ export type Stmt =
 
 export type Param = {
   name: string
-  type: NumType
+  /** A struct type for `struct Point p` (a copy), `struct Point *p` and `struct Point pts[]`. */
+  type: ValueType
   isArray: boolean
   /** `int *a`: the call passes an address (`f(&x)`), so the function can change the caller's variable through `*a`. */
   isPointer: boolean
@@ -123,7 +168,8 @@ export type Param = {
 
 export type FunctionDecl = {
   name: string
-  returnType: NumType | 'void'
+  /** A struct type for `struct Point make(...)`, which gives back a copy of a struct. */
+  returnType: ValueType | 'void'
   params: Param[]
   body: Stmt[]
   /** Line of the function header. */
@@ -188,8 +234,11 @@ export function toSource(expr: Expr): string {
       return `&${expr.name}`
     case 'null':
       return 'NULL'
-    case 'field':
-      return `${expr.name}.${expr.field}`
+    case 'member':
+      return (
+        (expr.deref ? `(*${expr.name})` : expr.name) +
+        expr.path.map((a) => (a.kind === 'index' ? `[${toSource(a.index)}]` : `${a.arrow ? '->' : '.'}${a.field}`)).join('')
+      )
     case 'sizeof':
       return `sizeof(${typeof expr.of === 'string' ? expr.of : toSource(expr.of)})`
   }
@@ -419,12 +468,12 @@ export function parse(source: string): Program {
       parseStructDefinition()
       continue
     }
-    if (is('struct')) rejectTopLevelStruct()
     rejectUnsupportedKeyword(token)
-    if (!isType() && !is('void')) {
+    if (!isType() && !is('void') && !is('struct')) {
       throw new CodeError(token.line, 'codeError.expectedFunction', { found: describe(token) })
     }
-    const returnType = advance().text as NumType | 'void'
+    // `struct Point make(int x, int y) {` returns a struct; `struct Point origin;` would be a global variable.
+    const returnType: ValueType | 'void' = accept('struct') ? structType() : (advance().text as NumType | 'void')
     if (is('*')) throw pointerError(peek().line, 'unsupported.pointerReturn')
     const nameToken = expectIdentifier()
 
@@ -459,7 +508,8 @@ export function parse(source: string): Program {
   return { functions, structs, usesPointers }
 
   /**
-   * `struct Point { int x; int y; };` Fields are int, float or char, each declared once.
+   * `struct Student { char name[20]; int marks[3]; float gpa; struct Date born; };` Fields are int, float
+   * or char, 1D arrays of those (with a fixed size), or a struct defined above; each name once.
    * A struct can only be used below its definition, as in C.
    */
   function parseStructDefinition() {
@@ -472,18 +522,33 @@ export function parse(source: string): Program {
     while (!is('}')) {
       const typeToken = peek()
       if (typeToken.kind === 'eof') throw new CodeError(typeToken.line, 'codeError.unclosedBrace')
-      if (is('struct')) throw structError(typeToken.line, 'construct.nestedStruct', 'unsupported.nestedStruct')
       rejectUnsupportedKeyword(typeToken)
-      if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedFieldType', { found: describe(typeToken) })
-      const type = advance().text as NumType
+      // A struct field needs its type defined above. `struct Node next;` inside struct Node isn't, as in C.
+      const nested = accept('struct') ? structType() : null
+      if (!nested && !isType()) throw new CodeError(typeToken.line, 'codeError.expectedFieldType', { found: describe(typeToken) })
+      const type = nested ? null : (advance().text as NumType)
       do {
         if (is('*')) throw pointerError(peek().line, 'unsupported.pointerField')
         const fieldToken = expectIdentifier()
         const field = fieldToken.text
-        if (is('[')) throw structError(fieldToken.line, 'construct.arrayField', 'unsupported.arrayField')
         if (fields.some((f) => f.name === field)) throw new CodeError(fieldToken.line, 'codeError.fieldTwice', { name, field })
+        if (accept('[')) {
+          if (nested) throw structError(fieldToken.line, 'construct.structArrayField', 'unsupported.structArrayField')
+          const sizeToken = peek()
+          if (sizeToken.kind !== 'number' || !/^\d+$/.test(sizeToken.text) || Number(sizeToken.text) === 0) {
+            throw new CodeError(sizeToken.line, 'codeError.fieldArraySize', { name, field })
+          }
+          advance()
+          expect(']')
+          const size = Number(sizeToken.text)
+          if (size > MAX_ARRAY_SIZE) throw new CodeError(fieldToken.line, 'codeError.arrayTooBig', { name: field, max: MAX_ARRAY_SIZE })
+          if (is('[')) throw structError(peek().line, 'construct.gridField', 'unsupported.gridField')
+          if (is('=')) throw new CodeError(fieldToken.line, 'codeError.fieldDefault', { name, field })
+          fields.push({ kind: 'array', name: field, type: type!, size })
+          continue
+        }
         if (is('=')) throw new CodeError(fieldToken.line, 'codeError.fieldDefault', { name, field })
-        fields.push({ name: field, type })
+        fields.push(nested ? { kind: 'struct', name: field, def: nested } : { kind: 'scalar', name: field, type: type! })
       } while (accept(','))
       expect(';')
     }
@@ -501,20 +566,6 @@ export function parse(source: string): Program {
     structs.set(name, { name, fields, line: nameToken.line })
   }
 
-  /** `struct Point make() {`, `struct Point *find() {` or `struct Point origin;` outside a function. */
-  function rejectTopLevelStruct(): never {
-    advance() // struct
-    structType()
-    if (is('*')) throw structError(peek().line, 'construct.structPointer', 'unsupported.structPointer')
-    const nameToken = expectIdentifier()
-    if (is('(')) throw structError(nameToken.line, 'construct.structReturn', 'unsupported.structReturn')
-    throw new UnsupportedConstructError(
-      nameToken.line,
-      { key: 'construct.globalVariable' },
-      { key: 'unsupported.globalVariable', values: { name: nameToken.text } },
-    )
-  }
-
   /** The name after `struct`, which must be a struct defined above. */
   function structType(): StructDef {
     const nameToken = expectIdentifier()
@@ -530,10 +581,11 @@ export function parse(source: string): Program {
     while (!is(')')) {
       if (params.length > 0) expect(',')
       const typeToken = peek()
-      if (is('struct')) throw structError(typeToken.line, 'construct.structParam', 'unsupported.structParam')
       rejectUnsupportedKeyword(typeToken)
-      if (!isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
-      const type = advance().text as NumType
+      // `struct Point p` (a copy), `struct Point *p` (the caller's struct) or `struct Point pts[]` (the caller's array).
+      const def = accept('struct') ? structType() : null
+      if (!def && !isType()) throw new CodeError(typeToken.line, 'codeError.expectedParamType', { found: describe(typeToken) })
+      const type: ValueType = def ?? (advance().text as NumType)
       const isPointer = accept('*')
       if (isPointer) usesPointers = true
       if (is('*')) throw pointerError(peek().line, 'unsupported.pointerToPointer')
@@ -546,6 +598,7 @@ export function parse(source: string): Program {
         if (peek().kind === 'number') advance()
         expect(']')
         isArray = true
+        if (def && is('[')) throw structError(peek().line, 'construct.structGrid', 'unsupported.structGrid')
         // A 2D parameter must say how many columns it has: int grid[][3]
         if (accept('[')) {
           const columnsToken = peek()
@@ -793,21 +846,32 @@ export function parse(source: string): Program {
     return { kind: 'declare', line: typeToken.line, type, declarators }
   }
 
-  /** `struct Point p;`, `struct Point p = {1, 2};` or `struct Point q = p;` — including the final ";". */
+  /**
+   * `struct Point p;`, `struct Point p = {1, 2};`, `struct Point q = p;`, `struct Point *ptr = &p;` or
+   * `struct Point pts[3] = {{1, 2}, {3, 4}};` — including the final ";".
+   */
   function parseStructDeclaration(): Stmt {
     const line = advance().line // struct
     const def = structType()
     const declarators: StructDeclarator[] = []
 
     do {
-      if (is('*')) throw structError(peek().line, 'construct.structPointer', 'unsupported.structPointer')
+      const isPointer = accept('*')
+      if (isPointer) usesPointers = true
+      if (is('*')) throw pointerError(peek().line, 'unsupported.pointerToPointer')
       const nameToken = expectIdentifier()
       if (is('(')) throw new CodeError(nameToken.line, 'codeError.nestedFunction', { name: nameToken.text })
-      if (is('[')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
-      const declarator: StructDeclarator = { line: nameToken.line, name: nameToken.text, values: null, copyOf: null }
-      if (accept('=')) {
-        if (is('{')) declarator.values = parseStructInit()
-        else declarator.copyOf = parseExpression()
+      const declarator: StructDeclarator = { line: nameToken.line, name: nameToken.text, isPointer, isArray: false, size: null, init: null }
+      if (accept('[')) {
+        if (isPointer) throw pointerError(nameToken.line, 'unsupported.pointerArray')
+        declarator.isArray = true
+        if (!is(']')) declarator.size = parseExpression()
+        expect(']')
+        if (is('[')) throw structError(peek().line, 'construct.structGrid', 'unsupported.structGrid')
+      }
+      if (accept('=')) declarator.init = parseInitializer()
+      if (declarator.isArray && !declarator.size && declarator.init?.kind !== 'list') {
+        throw new CodeError(nameToken.line, 'codeError.arraySize', { name: nameToken.text })
       }
       declarators.push(declarator)
     } while (accept(','))
@@ -816,18 +880,26 @@ export function parse(source: string): Program {
     return { kind: 'declareStruct', line, structName: def.name, declarators }
   }
 
-  /** `{1, 2}`: the fields' values in order. `{.x = 1}` names a field, which isn't supported. */
-  function parseStructInit(): Expr[] {
-    expect('{')
-    const values: Expr[] = []
+  /**
+   * What follows `=` in a struct declaration: `{1, 2}`, `{"Ali", {90, 85}, 3.5}` (a list can hold lists
+   * and "strings"), or an expression. `{.x = 1}` names a field, which isn't supported.
+   */
+  function parseInitializer(): Init {
+    const token = peek()
+    if (token.kind === 'string') {
+      advance()
+      return { kind: 'string', line: token.line, text: token.text }
+    }
+    if (!accept('{')) return { kind: 'expr', line: token.line, expr: parseExpression() }
+    const items: Init[] = []
     while (!is('}')) {
-      if (values.length > 0) expect(',')
+      if (items.length > 0) expect(',')
       if (is('}')) break // trailing comma
       if (is('.')) throw structError(peek().line, 'construct.designatedInit', 'unsupported.designatedInit')
-      values.push(parseExpression())
+      items.push(parseInitializer())
     }
     expect('}')
-    return values
+    return { kind: 'list', line: token.line, items }
   }
 
   /** `{a, b, c}` */
@@ -887,13 +959,13 @@ export function parse(source: string): Program {
     return { kind: 'expr', line, expr: parseExpression() }
   }
 
-  /** `x`, `arr[i]`, `grid[i][j]`, `*p`, `(*p)` or `p.x` on the left of an assignment. */
+  /** `x`, `arr[i]`, `grid[i][j]`, `*p`, `(*p)`, or a field like `p.x`, `p->x`, `(*p).x` or `students[i].gpa`. */
   function parseTarget(): Target {
     if (is('(') && is('*', 1)) {
       advance()
       const target = parseDeref()
       expect(')')
-      return target
+      return is('.') ? parsePostfix(target.name, target.line, true) : target
     }
     if (is('*')) {
       const target = parseDeref()
@@ -902,18 +974,34 @@ export function parse(source: string): Program {
       return target
     }
     const nameToken = expectIdentifier()
-    if (is('.')) return parseField(nameToken)
-    if (!is('[')) return { kind: 'var', line: nameToken.line, name: nameToken.text }
-    return parseIndexed(nameToken)
+    return parsePostfix(nameToken.text, nameToken.line)
   }
 
-  /** The `.x` after a struct variable's name. A field is an int, float or char, so nothing more can follow. */
-  function parseField(nameToken: Token): Extract<Expr, { kind: 'field' }> {
-    advance() // .
-    const field = expectIdentifier().text
-    if (is('.')) throw structError(peek().line, 'construct.nestedStruct', 'unsupported.nestedStruct')
-    if (is('[')) throw new CodeError(peek().line, 'codeError.notArray', { name: `${nameToken.text}.${field}` })
-    return { kind: 'field', line: nameToken.line, name: nameToken.text, field }
+  /**
+   * What follows a variable's name: any chain of `[i]`, `.field` and `->field`, e.g. `students[i].marks[j]`.
+   * Without a field it is a plain variable, array element or 2D cell; with one, a `member`. Whether each
+   * step fits the variable (a `.` on a struct, `[ ]` on an array, `->` on a pointer) is checked when it runs.
+   * `deref` marks `(*p)` before the first `.`.
+   */
+  function parsePostfix(name: string, line: number, deref = false): Exclude<Target, { kind: 'deref' }> {
+    const path: Accessor[] = []
+    for (;;) {
+      if (accept('[')) {
+        path.push({ kind: 'index', index: parseExpression() })
+        expect(']')
+      } else if (is('.') || is('->')) {
+        const arrow = advance().text === '->'
+        path.push({ kind: 'field', field: expectIdentifier().text, arrow })
+      } else break
+    }
+    if (deref || path.some((a) => a.kind === 'field')) {
+      return deref ? { kind: 'member', line, name, path, deref } : { kind: 'member', line, name, path }
+    }
+    const indexes = path.map((a) => (a as Extract<Accessor, { kind: 'index' }>).index)
+    if (indexes.length === 0) return { kind: 'var', line, name }
+    if (indexes.length === 1) return { kind: 'index', line, name, index: indexes[0] }
+    if (indexes.length > 2) throw tooManyDimensionsError(line)
+    return { kind: 'cell', line, name, row: indexes[0], col: indexes[1] }
   }
 
   /** `*p`, where p is a pointer's name. Anything else after the `*`, like `*(p + 1)`, is pointer arithmetic. */
@@ -924,22 +1012,6 @@ export function parse(source: string): Program {
     const nameToken = advance()
     if (is('[')) throw pointerError(star.line, 'unsupported.pointerToArray')
     return { kind: 'deref', line: star.line, name: nameToken.text }
-  }
-
-  /** The `[i]` or `[i][j]` after an array's name. */
-  function parseIndexed(nameToken: Token): Extract<Expr, { kind: 'index' | 'cell' }> {
-    expect('[')
-    const index = parseExpression()
-    expect(']')
-    if (!accept('[')) {
-      if (is('.')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
-      return { kind: 'index', line: nameToken.line, name: nameToken.text, index }
-    }
-    const col = parseExpression()
-    expect(']')
-    if (is('[')) throw tooManyDimensionsError(peek().line)
-    if (is('.')) throw structError(nameToken.line, 'construct.structArray', 'unsupported.structArray')
-    return { kind: 'cell', line: nameToken.line, name: nameToken.text, row: index, col }
   }
 
   function parsePrintf(): Stmt {
@@ -966,7 +1038,7 @@ export function parse(source: string): Program {
       // %s prints text: a "string" or a char array, named on its own (which one is checked when it runs).
       const arg = args[i]
       if (specifier === 's' && arg.kind === 'call' && writesText(arg.name)) throw stringResultError(line, arg.name)
-      if (specifier === 's' && kind !== 'string' && kind !== 'var') throw new CodeError(line, 'codeError.printfS')
+      if (specifier === 's' && kind !== 'string' && kind !== 'var' && kind !== 'member') throw new CodeError(line, 'codeError.printfS')
       if (specifier === 'p' && kind === 'string') throw new CodeError(line, 'codeError.printfPointer', { arg: toSource(args[i]) })
       if (specifier !== 's' && kind === 'string') throw new CodeError(line, 'codeError.printfNumber', { specifier: `%${specifier}` })
     })
@@ -990,10 +1062,11 @@ export function parse(source: string): Program {
     const line = advance().line // puts
     expect('(')
     const token = peek()
-    const isArrayName = token.kind === 'identifier' && (is(')', 1) || is(';', 1))
     if (token.kind === 'identifier' && is('(', 1) && writesText(token.text)) throw stringResultError(line, token.text)
-    if (token.kind !== 'string' && !isArrayName) throw new CodeError(token.line, 'codeError.putsText')
+    if (token.kind !== 'string' && token.kind !== 'identifier') throw new CodeError(token.line, 'codeError.putsText')
+    // A char array named on its own, or a char array field: puts(name), puts(s.name).
     const arg = parseText()
+    if (arg.kind !== 'string' && arg.kind !== 'var' && arg.kind !== 'member') throw new CodeError(token.line, 'codeError.putsText')
     expect(')')
     expect(';')
     return { kind: 'printf', line, format: '%s\n', args: [arg], isPuts: true }
@@ -1013,14 +1086,15 @@ export function parse(source: string): Program {
     const targets: Target[] = []
     while (accept(',')) {
       const position = targets.length + 1
-      // %s fills a whole char array, which is passed by its name alone: scanf("%s", name)
+      // %s fills a whole char array, which is passed by its name alone: scanf("%s", name), or scanf("%s", s.name)
       if (specifiers[targets.length] === 's') {
         const token = peek()
         const name = is('&') ? peek(1).text : token.text
-        if (token.kind !== 'identifier' || !(is(',', 1) || is(')', 1))) {
-          throw scanfReadError(token.line, position, specifiers.length, 'codeError.scanfSTarget', { name })
-        }
-        targets.push({ kind: 'var', line: advance().line, name })
+        const notText = () => scanfReadError(token.line, position, specifiers.length, 'codeError.scanfSTarget', { name })
+        if (token.kind !== 'identifier') throw notText()
+        const target = parseTarget()
+        if (target.kind !== 'var' && target.kind !== 'member') throw notText()
+        targets.push(target)
         continue
       }
       if (!accept('&')) {
@@ -1104,17 +1178,17 @@ export function parse(source: string): Program {
     const operand = parseUnary()
     if (operand.kind === 'var' || operand.kind === 'index' || operand.kind === 'cell') return { kind: 'sizeof', line, of: operand }
     if (operand.kind === 'deref' || operand.kind === 'address' || operand.kind === 'null') throw sizeofError(line, 'Pointer')
-    if (operand.kind === 'field') throw sizeofError(line, 'Struct')
+    if (operand.kind === 'member') throw sizeofError(line, 'Struct')
     throw sizeofError(line, 'Expression', { expr: toSource(operand) })
   }
 
-  /** `&x`: the address of a plain variable. `&arr[i]` would be a pointer into an array. */
+  /** `&x`: the address of a plain variable or a struct variable. `&arr[i]` would be a pointer into an array. */
   function parseAddress(): Expr {
     const amp = advance() // &
     if (peek().kind !== 'identifier' || is('(', 1)) throw new CodeError(amp.line, 'codeError.addressOfValue')
     const nameToken = advance()
     if (is('[')) throw pointerError(amp.line, 'unsupported.pointerToArray')
-    if (is('.')) throw pointerError(amp.line, 'unsupported.pointerToField')
+    if (is('.') || is('->')) throw pointerError(amp.line, 'unsupported.pointerToField')
     return { kind: 'address', line: amp.line, name: nameToken.text }
   }
 
@@ -1144,14 +1218,12 @@ export function parse(source: string): Program {
           args.push(parseText())
         }
         expect(')')
-        // `make().x` would need a function that returns a struct.
-        if (is('.')) throw structError(token.line, 'construct.structReturn', 'unsupported.structReturn')
+        // `make().x`: a field straight from what a function gives back.
+        if (is('.') || is('->')) throw structError(token.line, 'construct.callMember', 'unsupported.callMember')
         return { kind: 'call', line: token.line, name: token.text, args }
       }
-      if (is('[')) return parseIndexed(token)
-      if (is('.')) return parseField(token)
       if (token.text === 'NULL') return { kind: 'null', line: token.line }
-      return { kind: 'var', line: token.line, name: token.text }
+      return parsePostfix(token.text, token.line)
     }
 
     if (accept('(')) {
@@ -1161,6 +1233,8 @@ export function parse(source: string): Program {
       }
       const expr = parseExpression()
       expect(')')
+      // `(*p).x` is the long way of writing p->x.
+      if (expr.kind === 'deref' && is('.')) return parsePostfix(expr.name, expr.line, true)
       return expr
     }
 

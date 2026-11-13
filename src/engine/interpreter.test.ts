@@ -4,7 +4,7 @@ import { translations } from '../i18n/translations'
 import { formatPhrase } from '../i18n/formatPhrase'
 import { CodeError, UnsupportedConstructError, constructName, isMissingInput, missingInputPhrase } from './errors'
 import { MAX_STEPS, runUserCode } from './interpreter'
-import { charText, type Step } from './types'
+import { charText, isStructArrayView, type ArrayView, type GridView, type Step, type StructArrayView } from './types'
 
 function stepsOf(source: string): Step[] {
   const result = runUserCode(source)
@@ -13,6 +13,9 @@ function stepsOf(source: string): Step[] {
 }
 
 const lines = (...code: string[]) => code.join('\n')
+
+/** The values of a step's number array view (1D or 2D), for the tests that read them. */
+const arrayValues = (step: Step) => (step.array as ArrayView | GridView | null)?.values
 
 /** A step's explanation as the Playground shows it in English. */
 const english = (step: Step) => step.explanation.map((p) => formatPhrase(translations.en, p)).join(' ')
@@ -251,7 +254,7 @@ describe('runUserCode', () => {
     const checks = steps.filter((s) => s.line === 4)
     expect(checks.map((s) => s.array?.activeIndex)).toEqual([0, 1, 2, null])
     // The check shows the array as it was before the body changed it.
-    expect(checks[1].array?.values).toEqual([8, 8, 15])
+    expect(arrayValues(checks[1])).toEqual([8, 8, 15])
   })
 
   it('reports a pointer feature outside the subset as not supported, with its line', () => {
@@ -410,7 +413,7 @@ describe('runUserCode', () => {
   it('fills the rest of a bigger char array with \\0', () => {
     const steps = stepsOf(lines('int main() {', '    char word[5] = "ok";', '    char empty[3];', '    return 0;', '}'))
 
-    expect(steps[0].array?.values).toEqual([111, 107, 0, 0, 0])
+    expect(arrayValues(steps[0])).toEqual([111, 107, 0, 0, 0])
     expect(english(steps[1])).toBe('Declare a char array empty with room for 3 characters. It holds no text yet (every element is shown as \\0).')
   })
 
@@ -472,7 +475,7 @@ describe('runUserCode', () => {
     expect(english(writes[0])).toBe(
       'rand() gives the next random number: 16838 (always between 0 and 32767). Set arr[0] to rand() % 100: 16838 % 100 = 38.',
     )
-    const filled = steps.at(-1)!.array!.values as number[]
+    const filled = arrayValues(steps.at(-1)!) as number[]
     expect(filled[0]).toBe(38)
     expect(filled.every((v) => v >= 0 && v < 100)).toBe(true)
 
@@ -2106,19 +2109,18 @@ describe('runUserCode', () => {
     it('rejects struct features outside the subset as not supported', () => {
       const main = (...body: string[]) => [...point, 'int main() {', ...body, '    return 0;', '}']
       const cases: [string[], string][] = [
-        [[...point, 'void show(struct Point p) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.structParam'],
-        [[...point, 'struct Point make() {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.structReturn'],
-        [main('    struct Point *p;'), 'unsupported.structPointer'],
-        [main('    struct Point p;', '    int *q = &p;'), 'unsupported.structPointer'],
         [main('    struct Point p;', '    int *q = &p.x;'), 'unsupported.pointerToField'],
-        [main('    struct Point p;', '    p->x = 1;'), 'unsupported.arrow'],
-        [main('    struct Point pts[3];'), 'unsupported.structArray'],
-        [main('    int a[2];', '    a[0].x = 1;'), 'unsupported.structArray'],
+        [main('    struct Point p;', '    struct Point *q = &p;', '    int *r = &q->x;'), 'unsupported.pointerToField'],
+        [main('    struct Point pts[2];', '    struct Point *q = &pts[0];'), 'unsupported.pointerToArray'],
         [main('    struct Point p = {.x = 1};'), 'unsupported.designatedInit'],
-        [main('    struct Point p;', '    p.x.y = 1;'), 'unsupported.nestedStruct'],
-        [['struct A {', '    int x;', '};', 'struct B {', '    struct A a;', '};', 'int main() {', '    return 0;', '}'], 'unsupported.nestedStruct'],
-        [['struct A {', '    int marks[3];', '};', 'int main() {', '    return 0;', '}'], 'unsupported.arrayField'],
+        [main('    struct Point grid[2][2];'), 'unsupported.structGrid'],
+        [[...point, 'struct Point make() {', '    struct Point p = {1, 2};', '    return p;', '}', 'int main() {', '    int a = make().x;', '    return 0;', '}'], 'unsupported.callMember'],
+        [[...point, 'struct Point *find() {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.pointerReturn'],
+        [[...point, 'void f(struct Point g[][2]) {', '}', 'int main() {', '    return 0;', '}'], 'unsupported.structGrid'],
+        [[...point, 'struct B {', '    struct Point pts[3];', '};', 'int main() {', '    return 0;', '}'], 'unsupported.structArrayField'],
+        [['struct A {', '    int grid[2][2];', '};', 'int main() {', '    return 0;', '}'], 'unsupported.gridField'],
         [['struct A {', '    int *p;', '};', 'int main() {', '    return 0;', '}'], 'unsupported.pointerField'],
+        [['typedef struct {', '    int x;', '} P;', 'int main() {', '    return 0;', '}'], 'unsupported.keyword'],
         [['int main() {', '    struct A {', '        int x;', '    };', '    return 0;', '}'], 'unsupported.localStruct'],
         [[...point, 'struct Point origin;', 'int main() {', '    return 0;', '}'], 'unsupported.globalVariable'],
       ]
@@ -2145,9 +2147,549 @@ describe('runUserCode', () => {
         runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    p.z = 1;', '    return 0;', '}')),
         runUserCode(lines('int main() {', '    struct Pt p;', '    return 0;', '}')),
         runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    p = 5;', '    return 0;', '}')),
-        runUserCode(lines(...point, 'int main() {', '    struct Point *p;', '    return 0;', '}')),
+        runUserCode(lines(...point, 'int main() {', '    struct Point p;', '    int *q = &p.x;', '    return 0;', '}')),
       ].flatMap((result) => ('error' in result ? [result.error] : []))
       expect(errors).toHaveLength(4)
+
+      const phrases = [
+        ...stepsOf(program).flatMap((step) => step.explanation),
+        ...errors.map((error) => error.text),
+        ...errors.flatMap((error) => (error instanceof UnsupportedConstructError ? [error.construct] : [])),
+      ]
+      for (const strings of Object.values(translations)) {
+        for (const phrase of phrases) {
+          expect(formatPhrase(strings, phrase)).not.toMatch(/\{\w+\}|undefined/)
+        }
+      }
+    })
+  })
+
+  describe('structs: array fields, arrays of structs, pointers, functions and nesting', () => {
+    const point = ['struct Point {', '    int x;', '    int y;', '};']
+    const student = ['struct Student {', '    char name[10];', '    int marks[3];', '    float gpa;', '};']
+
+    /** The error a program stops with, as { line, key }. */
+    const errorOf = (...code: string[]) => {
+      const result = runUserCode(lines(...code))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return { line: result.error.line, key: result.error.text.key }
+    }
+    const errorText = (...code: string[]) => {
+      const result = runUserCode(lines(...code))
+      if (!('error' in result)) throw new Error('Expected an error')
+      return formatPhrase(translations.en, result.error.text)
+    }
+    /** `main()` with `body`, after the struct definitions in `defs`. main's first line is defs.length + 2. */
+    const inMain = (defs: string[], ...body: string[]) => [...defs, 'int main() {', ...body, '    return 0;', '}']
+    const structView = (step: Step): StructArrayView => {
+      if (!step.array || !isStructArrayView(step.array)) throw new Error('Expected an array of structs in the array view')
+      return step.array
+    }
+
+    describe('array fields', () => {
+      it('reads, writes and shows an array field like an array', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              student,
+              '    struct Student s = {"Ali", {90, 85}, 3.5};',
+              '    s.marks[2] = 77;',
+              '    int total = s.marks[0] + s.marks[1] + s.marks[2];',
+              '    printf("%s %d\\n", s.name, total);',
+            ),
+          ),
+        )
+        expect(steps[0].variables[0].fields).toEqual([
+          { name: 'name', value: '"Ali"' },
+          { name: 'marks', value: '[90, 85, 0]' },
+          { name: 'gpa', value: '3.5' },
+        ])
+        expect(english(steps[0])).toBe(
+          'Create s, a struct Student, and fill in its fields in order: name = "Ali", marks = [90, 85, 0] and gpa = 3.5. Fields left out of the { } start at 0.',
+        )
+        // One element written: the field's row is highlighted, and the array view shows that field.
+        expect(steps[1].changed).toEqual(['s.marks'])
+        expect(english(steps[1])).toBe('Set s.marks[2] to 77.')
+        expect(steps[1].array).toEqual({ name: 's.marks', values: [90, 85, 77], activeIndex: 2 })
+        expect(english(steps[2])).toBe('Create total and set it to s.marks[0] + s.marks[1] + s.marks[2]: 90 + 85 + 77 = 252.')
+        // %s on a char array field shows that field in the array view.
+        expect(steps[3].array).toMatchObject({ name: 's.name', chars: true, activeIndex: null })
+        expect(steps[3].output).toBe('Ali 252\n')
+      })
+
+      it('works with scanf, strcpy and strlen on char and int array fields', () => {
+        const result = runUserCode(
+          lines(
+            ...inMain(
+              student,
+              '    struct Student s;',
+              '    scanf("%s %d", s.name, &s.marks[0]);',
+              '    strcpy(s.name, "Bobur");',
+              '    printf("%d %d\\n", strlen(s.name), s.marks[0]);',
+            ),
+          ),
+          'Ali 90',
+        )
+        if ('error' in result) throw new Error(formatPhrase(translations.en, result.error.text))
+        const steps = result.steps
+        // An uninitialised array field starts at 0, like any array; the plain field has no value yet.
+        expect(steps[0].variables[0].fields).toEqual([
+          { name: 'name', value: '""' },
+          { name: 'marks', value: '[0, 0, 0]' },
+          { name: 'gpa', value: '?' },
+        ])
+        expect(steps[1].changed).toEqual(['s.name'])
+        expect(english(steps[1])).toBe('Read the word "Ali" from the input and store it in s.name: 3 characters, then \\0 to mark where the text ends.')
+        expect(steps[2].changed).toEqual(['s.marks'])
+        expect(english(steps[3])).toBe('Copy "Bobur" into s.name: 5 characters, then \\0 to mark where the text ends.')
+        expect(steps.at(-1)?.output).toBe('5 90\n')
+      })
+
+      it('reports an index outside an array field, and array field mistakes in the definition and the { }', () => {
+        expect(errorOf(...inMain(student, '    struct Student s;', '    s.marks[3] = 1;'))).toEqual({ line: 8, key: 'codeError.indexOutside' })
+        expect(errorText(...inMain(student, '    struct Student s;', '    s.marks[3] = 1;'))).toContain('s.marks')
+        expect(errorOf(...inMain(student, '    struct Student s = {"Abdurahmonov"};'))).toEqual({ line: 7, key: 'codeError.stringTooLong' })
+        expect(errorOf(...inMain(student, '    struct Student s = {"Ali", 90};'))).toEqual({ line: 7, key: 'codeError.arrayFieldInit' })
+        expect(errorOf(...inMain(student, '    struct Student s = {"Ali", {1, 2, 3, 4}};'))).toEqual({ line: 7, key: 'codeError.tooManyValues' })
+        expect(errorOf(...inMain(student, '    struct Student s;', '    s.marks = 5;'))).toEqual({ line: 8, key: 'codeError.assignArray' })
+        expect(errorOf(...inMain(student, '    struct Student s;', '    int m = s.marks;'))).toEqual({ line: 8, key: 'codeError.isArray' })
+        expect(errorOf('struct A {', '    int marks[0];', '};', 'int main() {', '    return 0;', '}')).toEqual({ line: 2, key: 'codeError.fieldArraySize' })
+        expect(errorOf('struct A {', '    int marks[n];', '};', 'int main() {', '    return 0;', '}')).toEqual({ line: 2, key: 'codeError.fieldArraySize' })
+      })
+    })
+
+    describe('arrays of structs', () => {
+      it('declares one, fills it in a loop and shows each element with its fields', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              point,
+              '    struct Point pts[3];',
+              '    for (int i = 0; i < 3; i++) {',
+              '        pts[i].x = i;',
+              '        pts[i].y = i * i;',
+              '    }',
+              '    printf("%d\\n", pts[2].y);',
+            ),
+          ),
+        )
+        expect(steps[0].variables).toEqual([{ name: 'pts', value: '[{…}, {…}, {…}]', structType: 'Point', length: 3 }])
+        expect(english(steps[0])).toBe('Create pts, an array of 3 struct Point elements, pts[0] to pts[2]. Their fields have no values yet.')
+        expect(structView(steps[0])).toMatchObject({ kind: 'structs', name: 'pts', structType: 'Point', activeIndex: null })
+        expect(structView(steps[0]).items[0]).toEqual([{ name: 'x', value: '?' }, { name: 'y', value: '?' }])
+
+        // The loop check already points at the element and field its body uses first.
+        expect(structView(steps[1])).toMatchObject({ activeIndex: 0, activeField: 'x' })
+        const writes = steps.filter((s) => s.line === 8)
+        expect(writes).toHaveLength(3)
+        expect(writes[1].changed).toEqual(['pts'])
+        expect(english(writes[1])).toBe('Set pts[1].x to i (1).')
+        expect(structView(writes[1])).toMatchObject({ activeIndex: 1, activeField: 'x' })
+        expect(structView(steps.at(-2)!).items[2]).toEqual([{ name: 'x', value: '2' }, { name: 'y', value: '4' }])
+        expect(steps.at(-1)?.output).toBe('4\n')
+      })
+
+      it('fills one from { } lists and copies whole elements in and out', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              point,
+              '    struct Point pts[] = {{1, 2}, {3}};',
+              '    struct Point p = pts[1];',
+              '    pts[0] = p;',
+              '    p.x = 9;',
+              '    printf("%d %d %d\\n", pts[0].x, pts[0].y, p.x);',
+            ),
+          ),
+        )
+        expect(english(steps[0])).toBe(
+          'Create pts, an array of 2 struct Point elements, and fill them in order: pts[0] = {x = 1, y = 2} and pts[1] = {x = 3, y = 0}. Elements and fields left out of the { } start at 0.',
+        )
+        expect(english(steps[1])).toBe(
+          "Create p, a struct Point, as a copy of pts[1]: x = 3 and y = 0. p has its own fields, so changing p later doesn't change pts[1].",
+        )
+        // A whole element written: the array is named in changed, and the element is highlighted without a field.
+        expect(steps[2].changed).toEqual(['pts'])
+        expect(structView(steps[2]).activeIndex).toBe(0)
+        expect(structView(steps[2]).activeField).toBeUndefined()
+        expect(steps.at(-1)?.output).toBe('3 0 9\n')
+      })
+
+      it('reports mistakes with arrays of structs as code errors', () => {
+        const cases: [string[], number, string][] = [
+          [inMain(point, '    struct Point pts[3];', '    pts[3].x = 1;'), 7, 'codeError.indexOutside'],
+          [inMain(point, '    struct Point pts[3] = {{1, 2}};', '    printf("%d", pts[0]);'), 7, 'codeError.isStruct'],
+          [inMain(point, '    struct Point pts[2] = {1, 2, 3, 4};'), 6, 'codeError.structArrayInit'],
+          [inMain(point, '    struct Point pts[];'), 6, 'codeError.arraySize'],
+          [inMain(point, '    struct Point pts[2] = {{1, 2}, {3, 4}, {5, 6}};'), 6, 'codeError.tooManyValues'],
+          [inMain(point, '    struct Point pts[2];', '    int n = pts.x;'), 7, 'codeError.notStruct'],
+          [inMain(point, '    int a[2];', '    a[0].x = 1;'), 7, 'codeError.notStruct'],
+          [inMain(point, '    struct Point pts[2];', '    int n = sizeof(pts);'), 7, 'unsupported.sizeofStruct'],
+        ]
+        for (const [code, line, key] of cases) expect(errorOf(...code)).toEqual({ line, key })
+        expect(errorText(...inMain(point, '    struct Point pts[3];', '    pts[3].x = 1;'))).toContain('pts')
+      })
+    })
+
+    describe('pointers to structs and ->', () => {
+      it('points at a struct and reads and writes its fields with -> and (*p).', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              point,
+              '    struct Point a = {1, 2};',
+              '    struct Point *p = &a;',
+              '    p->x = 10;',
+              '    (*p).y += 5;',
+              '    printf("%d %d %p\\n", a.x, p->y, p);',
+            ),
+          ),
+        )
+        expect(steps[1].variables[1]).toMatchObject({ name: 'p', isPointer: true, value: '0x100', pointsTo: '0x100' })
+        expect(english(steps[1])).toBe("Create pointer p and point it at a: it holds a's address, 0x100.")
+        // Writing through the pointer highlights a's field, the way *p = 1 highlights the variable p points to.
+        expect(steps[2].changed).toEqual(['a.x'])
+        expect(english(steps[2])).toBe('p->x is the field x of a, the struct p points to. Set p->x to 10.')
+        expect(steps[3].changed).toEqual(['a.y'])
+        expect(english(steps[3])).toBe('(*p).y is the field y of a, the struct p points to. Set (*p).y to (*p).y + 5: 2 + 5 = 7.')
+        expect(steps[4].output).toBe('10 7 0x100\n')
+      })
+
+      it("changes the caller's struct through a pointer parameter and shows that struct's box", () => {
+        const steps = stepsOf(
+          lines(
+            ...point,
+            'void move(struct Point *q, int dx) {',
+            '    q->x += dx;',
+            '}',
+            'int main() {',
+            '    struct Point a = {1, 2};',
+            '    move(&a, 3);',
+            '    printf("%d\\n", a.x);',
+            '    return 0;',
+            '}',
+          ),
+        )
+        expect(english(steps[1])).toBe('Call move(&a, 3). Inside move, q points to a (it holds its address, 0x100) and dx = 3.')
+        const write = steps.find((s) => s.line === 6)!
+        // a belongs to main(), so its field is named "a@main().x" and its box is shown as "a · main()".
+        expect(write.changed).toEqual(['a@main().x'])
+        expect(write.variables).toContainEqual(expect.objectContaining({ name: 'a', scope: 'main()', fields: [{ name: 'x', value: '4' }, { name: 'y', value: '2' }] }))
+        expect(steps.at(-1)?.output).toBe('4\n')
+      })
+
+      it('reports pointer and arrow mistakes as code errors', () => {
+        const other = ['struct Other {', '    int x;', '};']
+        const cases: [string[], number, string][] = [
+          [inMain(point, '    struct Point a;', '    struct Point *p = &a;', '    p.x = 1;'), 8, 'codeError.dotOnPointer'],
+          [inMain(point, '    struct Point a;', '    a->x = 1;'), 7, 'codeError.arrowNotPointer'],
+          [inMain(point, '    int n = 1;', '    int *q = &n;', '    q->x = 1;'), 8, 'codeError.arrowNotPointer'],
+          [inMain(point, '    struct Point *p = NULL;', '    p->x = 1;'), 7, 'codeError.derefNull'],
+          [inMain(point, '    struct Point *p;', '    int n = p->x;'), 7, 'codeError.derefUninit'],
+          [inMain(point, '    struct Point a;', '    int *q = &a;'), 7, 'codeError.pointerTypeMismatch'],
+          [inMain([...point, ...other], '    struct Other b;', '    struct Point *p = &b;'), 10, 'codeError.pointerTypeMismatch'],
+          [inMain(point, '    struct Point a = {1, 2};', '    struct Point *p = &a;', '    int n = *p;'), 8, 'codeError.isStruct'],
+        ]
+        for (const [code, line, key] of cases) expect(errorOf(...code)).toEqual({ line, key })
+        expect(errorText(...inMain(point, '    struct Point a;', '    struct Point *p = &a;', '    p.x = 1;'))).toBe(
+          'p is a pointer to a struct, so its fields are reached with ->, e.g. p->x',
+        )
+      })
+    })
+
+    describe('structs and functions', () => {
+      it('passes a struct by value, so the function changes only its own copy', () => {
+        const steps = stepsOf(
+          lines(
+            ...point,
+            'void reset(struct Point p) {',
+            '    p.x = 0;',
+            '}',
+            'int main() {',
+            '    struct Point a = {4, 5};',
+            '    reset(a);',
+            '    printf("%d\\n", a.x);',
+            '    return 0;',
+            '}',
+          ),
+        )
+        expect(english(steps[1])).toBe(
+          "Call reset(a). Inside reset, p is a copy of a: {x = 4, y = 5}. A struct is passed by value: reset works on its own copy, so changes made there don't change the caller's struct.",
+        )
+        expect(steps[2]).toMatchObject({ line: 6, changed: ['p.x'] })
+        expect(steps.at(-1)?.output).toBe('4\n')
+      })
+
+      it('returns a struct, which the caller gets as a copy', () => {
+        const steps = stepsOf(
+          lines(
+            ...point,
+            'struct Point make(int x, int y) {',
+            '    struct Point p = {x, y};',
+            '    return p;',
+            '}',
+            'int main() {',
+            '    struct Point a = make(1, 2);',
+            '    struct Point b;',
+            '    b = make(3, 4);',
+            '    printf("%d %d\\n", a.x, b.y);',
+            '    return 0;',
+            '}',
+          ),
+        )
+        expect(english(steps.find((s) => s.line === 7)!)).toBe('Leave make and go back to main, returning p ({x = 1, y = 2}).')
+        expect(english(steps.find((s) => s.line === 10)!)).toBe('Create a, a struct Point, from the struct make(1, 2) gave back: x = 1 and y = 2.')
+        const assigned = steps.find((s) => s.line === 12)!
+        expect(assigned.changed).toEqual(['b'])
+        expect(english(assigned)).toBe('Copy the struct make(3, 4) gave back into b: x = 3 and y = 4.')
+        expect(steps.at(-1)?.output).toBe('1 4\n')
+      })
+
+      it("passes an array of structs by reference, so the function changes the caller's elements", () => {
+        const steps = stepsOf(
+          lines(
+            ...point,
+            'void clear(struct Point pts[], int n) {',
+            '    for (int i = 0; i < n; i++) pts[i].x = 0;',
+            '}',
+            'int main() {',
+            '    struct Point pts[2] = {{1, 2}, {3, 4}};',
+            '    clear(pts, 2);',
+            '    printf("%d %d\\n", pts[1].x, pts[1].y);',
+            '    return 0;',
+            '}',
+          ),
+        )
+        expect(english(steps[1])).toBe('Call clear(pts, 2). Inside clear, pts is the array pts and n = 2.')
+        expect(steps.at(-1)?.output).toBe('0 4\n')
+      })
+
+      it('reports struct parameter and return mistakes as code errors', () => {
+        const make = ['struct Point make() {', '    struct Point p = {1, 2};', '    return p;', '}']
+        const cases: [string[], number, string][] = [
+          [[...point, 'void f(struct Point p) {', '}', 'int main() {', '    f(5);', '    return 0;', '}'], 8, 'codeError.expectsStruct'],
+          [[...point, 'void f(struct Point p[]) {', '}', 'int main() {', '    struct Point a;', '    f(a);', '    return 0;', '}'], 9, 'codeError.expectsStructArray'],
+          [[...point, 'struct Point make() {', '    return 5;', '}', 'int main() {', '    struct Point a = make();', '    return 0;', '}'], 6, 'codeError.returnStruct'],
+          [[...point, ...make, 'int main() {', '    int n = make();', '    return 0;', '}'], 10, 'codeError.callIsStruct'],
+          [[...point, 'struct Point make() {', '}', 'int main() {', '    struct Point a = make();', '    return 0;', '}'], 6, 'codeError.missingReturn'],
+          [[...point, 'struct Point make() {', '    return;', '}', 'int main() {', '    make();', '    return 0;', '}'], 6, 'codeError.mustReturn'],
+        ]
+        for (const [code, line, key] of cases) expect(errorOf(...code)).toEqual({ line, key })
+        expect(errorText(...point, 'struct Point make() {', '    return;', '}', 'int main() {', '    make();', '    return 0;', '}')).toBe(
+          'make must return a struct Point value.',
+        )
+      })
+    })
+
+    describe('copying structs', () => {
+      it('copies array fields too, so the copy has its own array', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              student,
+              '    struct Student a = {"Ali", {1, 2, 3}, 3.0};',
+              '    struct Student b = a;',
+              '    b.marks[0] = 99;',
+              '    strcpy(b.name, "Bob");',
+              '    printf("%s %d %s %d\\n", a.name, a.marks[0], b.name, b.marks[0]);',
+            ),
+          ),
+        )
+        expect(steps.at(-1)?.output).toBe('Ali 1 Bob 99\n')
+        expect(steps.at(-1)?.variables[0].fields?.[1]).toEqual({ name: 'marks', value: '[1, 2, 3]' })
+      })
+
+      it('copies between array elements and through a pointer, keeping each struct separate', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              point,
+              '    struct Point pts[2] = {{1, 2}, {3, 4}};',
+              '    pts[1] = pts[0];',
+              '    pts[0].x = 7;',
+              '    struct Point a = {0, 0}, b = {5, 6};',
+              '    struct Point *p = &a;',
+              '    *p = b;',
+              '    b.x = 0;',
+              '    a = a;',
+              '    printf("%d %d %d\\n", pts[1].x, a.x, b.x);',
+            ),
+          ),
+        )
+        const throughPointer = steps.find((s) => s.line === 11)!
+        expect(throughPointer.changed).toEqual(['a'])
+        expect(english(throughPointer)).toContain('*p is a, the variable p points to')
+        expect(steps.at(-1)?.output).toBe('1 5 0\n')
+      })
+
+      it('only copies a struct of the same type, and only with =', () => {
+        const other = ['struct Other {', '    int x;', '    int y;', '};']
+        expect(errorOf(...inMain([...point, ...other], '    struct Point a;', '    struct Other b = {1, 2};', '    a = b;'))).toEqual({
+          line: 12,
+          key: 'codeError.structTypeMismatch',
+        })
+        expect(errorOf(...inMain(point, '    struct Point a = {1, 2}, b = {3, 4};', '    a += b;'))).toEqual({ line: 7, key: 'codeError.isStruct' })
+        expect(errorOf(...inMain(point, '    struct Point pts[2];', '    pts[0] = 5;'))).toEqual({ line: 7, key: 'codeError.structAssign' })
+      })
+    })
+
+    describe('nested structs', () => {
+      const date = ['struct Date {', '    int day;', '    int month;', '};']
+      const person = [...date, 'struct Person {', '    char name[8];', '    struct Date born;', '};']
+
+      it('fills, reads, writes and copies a struct field, and shows it as rows inside its row', () => {
+        const steps = stepsOf(
+          lines(
+            ...inMain(
+              person,
+              '    struct Person p = {"Ali", {12, 3}};',
+              '    p.born.day++;',
+              '    struct Date d = p.born;',
+              '    d.month = 4;',
+              '    p.born = d;',
+              '    printf("%s %d/%d\\n", p.name, p.born.day, p.born.month);',
+            ),
+          ),
+        )
+        expect(steps[0].variables[0].fields).toEqual([
+          { name: 'name', value: '"Ali"' },
+          { name: 'born', value: '{day = 12, month = 3}', fields: [{ name: 'day', value: '12' }, { name: 'month', value: '3' }] },
+        ])
+        // A field of a field is named by its whole path, so only that inner row is highlighted.
+        expect(steps[1].changed).toEqual(['p.born.day'])
+        expect(english(steps[1])).toBe('Increase p.born.day by 1. p.born.day is now 13.')
+        expect(english(steps[2])).toBe(
+          "Create d, a struct Date, as a copy of p.born: day = 13 and month = 3. d has its own fields, so changing d later doesn't change p.born.",
+        )
+        expect(steps[4].changed).toEqual(['p.born'])
+        expect(steps.at(-1)?.output).toBe('Ali 13/4\n')
+      })
+
+      it('reaches nested fields inside an array of structs and with scanf', () => {
+        const result = runUserCode(
+          lines(...inMain(person, '    struct Person group[2];', '    scanf("%d", &group[1].born.month);', '    printf("%d\\n", group[1].born.month);')),
+          '7',
+        )
+        if ('error' in result) throw new Error(formatPhrase(translations.en, result.error.text))
+        expect(result.steps[1].changed).toEqual(['group'])
+        expect(english(result.steps[1])).toBe('Read 7 from the input and store it in group[1].born.month.')
+        expect(structView(result.steps[1])).toMatchObject({ activeIndex: 1, activeField: 'born' })
+        expect(result.steps.at(-1)?.output).toBe('7\n')
+      })
+
+      it('reports nested struct mistakes as code errors', () => {
+        expect(errorOf('struct Node {', '    int value;', '    struct Node next;', '};', 'int main() {', '    return 0;', '}')).toEqual({
+          line: 3,
+          key: 'codeError.unknownStruct',
+        })
+        expect(errorOf(...inMain(person, '    struct Person p;', '    p.born.year = 2000;'))).toEqual({ line: 11, key: 'codeError.noField' })
+        expect(errorOf(...inMain(person, '    struct Person p;', '    p.name.x = 1;'))).toEqual({ line: 11, key: 'codeError.notStruct' })
+        expect(errorOf(...inMain(point, '    struct Point p;', '    p.x.y = 1;'))).toEqual({ line: 7, key: 'codeError.notStruct' })
+        expect(errorOf(...inMain(person, '    struct Person p = {"Ali", 12};'))).toEqual({ line: 10, key: 'codeError.structAssign' })
+      })
+    })
+
+    it('runs a whole student-grades program: an array of structs read with scanf and averaged in a function', () => {
+      const program = lines(
+        '#include <stdio.h>',
+        'struct Student {',
+        '    char name[20];',
+        '    int marks[3];',
+        '    float gpa;',
+        '};',
+        'float average(struct Student list[], int n) {',
+        '    float sum = 0;',
+        '    for (int i = 0; i < n; i++) {',
+        '        sum += list[i].gpa;',
+        '    }',
+        '    return sum / n;',
+        '}',
+        'int main() {',
+        '    struct Student group[3];',
+        '    for (int i = 0; i < 3; i++) {',
+        '        scanf("%s", group[i].name);',
+        '        for (int j = 0; j < 3; j++) {',
+        '            scanf("%d", &group[i].marks[j]);',
+        '        }',
+        '        int total = group[i].marks[0] + group[i].marks[1] + group[i].marks[2];',
+        '        group[i].gpa = total / 3 / 25.0;',
+        '        printf("%s: %f\\n", group[i].name, group[i].gpa);',
+        '    }',
+        '    printf("Average GPA: %f\\n", average(group, 3));',
+        '    return 0;',
+        '}',
+      )
+      const result = runUserCode(program, 'Ali 90 85 80 Vali 70 60 65 Gani 100 95 90')
+      if ('error' in result) throw new Error(formatPhrase(translations.en, result.error.text))
+      const { steps } = result
+
+      expect(steps.at(-1)?.output).toBe('Ali: 3.400000\nVali: 2.600000\nGani: 3.800000\nAverage GPA: 3.266667\n')
+
+      // Reading one mark shows that student's marks array, with the mark being read highlighted.
+      const firstMark = steps.find((s) => s.line === 19)!
+      expect(english(firstMark)).toBe('Read 90 from the input and store it in group[0].marks[0].')
+      expect(firstMark.array).toEqual({ name: 'group[0].marks', values: [90, 0, 0], activeIndex: 0 })
+      expect(firstMark.changed).toEqual(['group'])
+
+      // Setting a GPA shows the whole array of structs, with that student's gpa row highlighted.
+      const secondGpa = steps.filter((s) => s.line === 22)[1]
+      expect(english(secondGpa)).toBe('Set group[1].gpa to total / 3 / 25.0: 195 / 3 / 25.0 = 2.6.')
+      expect(structView(secondGpa)).toMatchObject({ activeIndex: 1, activeField: 'gpa' })
+      expect(structView(secondGpa).items[1]).toEqual([
+        { name: 'name', value: '"Vali"' },
+        { name: 'marks', value: '[70, 60, 65]' },
+        { name: 'gpa', value: '2.6' },
+      ])
+
+      // Inside average(), list is main's array (shared, not copied), read element by element.
+      const sums = steps.filter((s) => s.line === 10)
+      expect(sums).toHaveLength(3)
+      expect(sums[2].scope).toBe('average()')
+      expect(structView(sums[2])).toMatchObject({ name: 'list', activeIndex: 2, activeField: 'gpa' })
+      expect(steps.length).toBeLessThan(MAX_STEPS)
+    })
+
+    it('explains every new struct step and error in every language', () => {
+      const program = lines(
+        ...point,
+        'struct Box {',
+        '    char label[6];',
+        '    int sizes[2];',
+        '    struct Point corner;',
+        '};',
+        'struct Point make(struct Point p) {',
+        '    return p;',
+        '}',
+        'void grow(struct Box *b, struct Box all[]) {',
+        '    b->sizes[0] += 1;',
+        '    all[0].corner.x = 2;',
+        '}',
+        'int main() {',
+        '    struct Box boxes[2] = {{"a", {1, 2}, {3, 4}}};',
+        '    struct Box empty[1];',
+        '    struct Box one = boxes[0];',
+        '    struct Box *p = &one;',
+        '    (*p).corner = make(one.corner);',
+        '    grow(p, boxes);',
+        '    return 0;',
+        '}',
+      )
+      const errors = [
+        runUserCode(lines(...inMain(point, '    struct Point a;', '    a->x = 1;'))),
+        runUserCode(lines(...inMain(point, '    struct Point a;', '    struct Point *p = &a;', '    p.x = 1;'))),
+        runUserCode(lines(...inMain(point, '    struct Point pts[2] = {1, 2, 3, 4};'))),
+        runUserCode(lines(...point, 'struct Point make() {', '    return 5;', '}', 'int main() {', '    struct Point a = make();', '    return 0;', '}')),
+        runUserCode(lines(...point, 'struct Point make() {', '    struct Point p = {1, 2};', '    return p;', '}', 'int main() {', '    int n = make();', '    return 0;', '}')),
+        runUserCode(lines(...point, 'void f(struct Point p) {', '}', 'int main() {', '    f(5);', '    return 0;', '}')),
+        runUserCode(lines(...point, 'void f(struct Point p[]) {', '}', 'int main() {', '    f(5);', '    return 0;', '}')),
+        runUserCode(lines(...inMain(['struct A {', '    int m[2];', '};'], '    struct A a = {5};'))),
+        runUserCode(lines('struct A {', '    int m[0];', '};', 'int main() {', '    return 0;', '}')),
+        runUserCode(lines(...inMain(point, '    struct Point grid[2][2];'))),
+        runUserCode(lines(...point, 'struct B {', '    struct Point pts[3];', '};', 'int main() {', '    return 0;', '}')),
+        runUserCode(lines('struct A {', '    int grid[2][2];', '};', 'int main() {', '    return 0;', '}')),
+        runUserCode(lines(...point, 'struct Point make() {', '    struct Point p = {1, 2};', '    return p;', '}', 'int main() {', '    int a = make().x;', '    return 0;', '}')),
+      ].flatMap((result) => ('error' in result ? [result.error] : []))
+      expect(errors).toHaveLength(13)
 
       const phrases = [
         ...stepsOf(program).flatMap((step) => step.explanation),

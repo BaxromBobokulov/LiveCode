@@ -27,11 +27,22 @@ export type Variable = {
   scope?: string
   /** For a pointer: the address of the variable it points to, so the panel can draw an arrow to that box. */
   pointsTo?: string
-  /** For a struct variable, e.g. `struct Point p`: the struct's name, "Point". Its fields are in `fields`. */
+  /**
+   * For a struct variable, e.g. `struct Point p`: the struct's name, "Point". Its fields are in `fields`.
+   * Also set on an array of structs (`struct Point pts[3]`), together with `length`.
+   */
   structType?: string
   /** A struct variable's fields in the order they are declared, each with a display-ready value ("?" before it has one). */
-  fields?: { name: string; value: string }[]
+  fields?: FieldView[]
+  /** For an array of structs: how many elements it has. Its elements are drawn in the array view. */
+  length?: number
 }
+
+/**
+ * One field of a struct as the panel shows it. `value` is display-ready: "3", "?", "[90, 85, 77]" for an
+ * array field, "\"Ali\"" for a char array field. A struct field also has its own `fields`.
+ */
+export type FieldView = { name: string; value: string; fields?: FieldView[] }
 
 /**
  * How a variable is told apart in `Step.changed` and in the Variables panel: its name, or "x@main()"
@@ -42,8 +53,11 @@ export function variableKey(variable: Pick<Variable, 'name' | 'scope'>): string 
 }
 
 /**
- * How `Step.changed` names one field of a struct variable when only that field changed, e.g. "p.x".
- * When the whole struct changed (declared, or copied with `p2 = p1;`) `changed` names just the variable.
+ * How `Step.changed` names one field of a struct variable when only that field changed, e.g. "p.x", or
+ * "p.born.day" for a field of a struct field (pass "born.day"). When the whole struct changed (declared,
+ * or copied with `p2 = p1;`) `changed` names just the variable. A write to one element of an array field
+ * names the field ("s.marks"), and a write into an array of structs names the array ("students"), the
+ * same way `arr[i] = 1;` names `arr`.
  */
 export function fieldKey(variable: Pick<Variable, 'name' | 'scope'>, field: string): string {
   return `${variableKey(variable)}.${field}`
@@ -75,9 +89,34 @@ export type GridView = {
   chars?: true
 }
 
-/** Tells a 2D array view apart from a 1D one. */
-export function isGridView(view: ArrayView | GridView): view is GridView {
-  return Array.isArray(view.values[0])
+/**
+ * An array of structs, e.g. `struct Student students[3]`, drawn as a row of elements, each one a small
+ * box of its fields (like a struct's box in the Variables panel).
+ */
+export type StructArrayView = {
+  kind: 'structs'
+  name: string
+  /** The struct's name, "Student". */
+  structType: string
+  /** One entry per element: its fields in order, each display-ready (see FieldView). */
+  items: FieldView[][]
+  /** Element the current line reads or writes, or null when no element is in use. */
+  activeIndex: number | null
+  /** The field of the active element the line uses, e.g. "gpa". Not set when it uses the whole element. */
+  activeField?: string
+}
+
+/** What the array view can draw: a 1D array, a 2D array or an array of structs. */
+export type AnyArrayView = ArrayView | GridView | StructArrayView
+
+/** Tells an array of structs apart from the number arrays. */
+export function isStructArrayView(view: AnyArrayView): view is StructArrayView {
+  return 'kind' in view && view.kind === 'structs'
+}
+
+/** Tells a 2D array view apart from a 1D one (or an array of structs). */
+export function isGridView(view: AnyArrayView): view is GridView {
+  return !isStructArrayView(view) && Array.isArray(view.values[0])
 }
 
 /**
@@ -113,7 +152,7 @@ export type Step = {
   variables: Variable[]
   /** Names of the variables that changed on this step (see variableKey for another function's variable). */
   changed: string[]
-  array: ArrayView | GridView | null
+  array: AnyArrayView | null
   loop: LoopInfo | null
   /** Everything printed to the console so far. */
   output: string

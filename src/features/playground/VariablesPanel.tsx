@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
-import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { fieldKey, variableKey, type Variable } from '../../engine/types'
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { fieldKey, variableKey, type FieldView, type Variable } from '../../engine/types'
 import { useTranslation } from '../../i18n/useTranslation'
 
 type VariablesPanelProps = {
@@ -124,7 +124,35 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
             // A struct is one box holding its fields as labelled rows (name on the left, value on the
             // right), so it reads as one variable made of named parts — not as an array's row of cells.
             // When only one field changed, the box gets the accent border and just that row is tinted.
-            const fieldChanged = variable.fields.some((field) => changed.includes(fieldKey(variable, field.name)))
+            // A struct field holds its own rows, indented under its name.
+            const fieldChanged = changed.some((name) => name.startsWith(`${key}.`))
+            const fieldRows = (fields: FieldView[], path: string, tinted: boolean, className: string): ReactNode => (
+              <dl className={`divide-y divide-border rounded-control border border-border ${className}`}>
+                {fields.map((field) => {
+                  const fieldPath = path ? `${path}.${field.name}` : field.name
+                  const isFieldChanged = changed.includes(fieldKey(variable, fieldPath))
+                  const onTint = tinted || isFieldChanged
+                  const nameClass = `font-mono text-caption ${onTint ? 'text-textMutedOnTint' : 'text-textMuted'}`
+                  if (field.fields) {
+                    return (
+                      <div key={field.name} className={`px-2 py-1 ${isFieldChanged ? 'bg-accentTint' : ''}`}>
+                        <dt className={nameClass}>{field.name}</dt>
+                        <dd>{fieldRows(field.fields, fieldPath, onTint, 'mt-1')}</dd>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      key={field.name}
+                      className={`flex items-baseline justify-between gap-3 px-2 py-1 ${isFieldChanged ? 'bg-accentTint' : ''}`}
+                    >
+                      <dt className={nameClass}>{field.name}</dt>
+                      <dd>{showValue(field.value, onTint, 'origin-right font-mono text-body-md leading-5 text-text')}</dd>
+                    </div>
+                  )
+                })}
+              </dl>
+            )
             return (
               <div
                 key={key}
@@ -133,7 +161,8 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
                   else boxRefs.current.delete(key)
                 }}
                 data-step-change={isChanged || fieldChanged || undefined}
-                className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 transition-colors duration-200 motion-reduce:transition-none ${
+                // A caller's struct (shown while a function that points to it runs) gets a dashed border too.
+                className={`min-w-30 flex-auto rounded-container border px-2.75 py-2 ${variable.scope ? 'border-dashed' : ''} transition-colors duration-200 motion-reduce:transition-none ${
                   isChanged ? 'border-accent bg-accentTint' : fieldChanged ? 'border-accent bg-panel' : 'border-border bg-panel'
                 }`}
               >
@@ -143,21 +172,7 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
                   </span>
                   {variable.address && <span>{variable.address}</span>}
                 </div>
-                <dl className="mt-1.5 divide-y divide-border rounded-control border border-border">
-                  {variable.fields.map((field) => {
-                    const isFieldChanged = changed.includes(fieldKey(variable, field.name))
-                    const onTint = isChanged || isFieldChanged
-                    return (
-                      <div
-                        key={field.name}
-                        className={`flex items-baseline justify-between gap-3 px-2 py-1 ${isFieldChanged ? 'bg-accentTint' : ''}`}
-                      >
-                        <dt className={`font-mono text-caption ${onTint ? 'text-textMutedOnTint' : 'text-textMuted'}`}>{field.name}</dt>
-                        <dd>{showValue(field.value, onTint, 'origin-right font-mono text-body-md leading-5 text-text')}</dd>
-                      </div>
-                    )
-                  })}
-                </dl>
+                {fieldRows(variable.fields, '', isChanged, 'mt-1.5')}
               </div>
             )
           }
@@ -176,7 +191,11 @@ function VariablesPanel({ variables, changed, stepKey }: VariablesPanelProps) {
               }`}
             >
               <div className={`flex justify-between gap-2 ${captionClass}`}>
-                <span>{label(variable)}</span>
+                {/* An array of structs names its type, like a struct's box: students : struct Student[3]. */}
+                <span>
+                  {label(variable)}
+                  {variable.structType && variable.length !== undefined && ` : struct ${variable.structType}[${variable.length}]`}
+                </span>
                 {variable.address && <span>{variable.address}</span>}
               </div>
               {showValue(variable.value, isChanged)}
