@@ -42,7 +42,7 @@ The thread already runs end to end in the uncommitted working tree: the engine t
 A pointer is drawn as an arrow from its box to the box of the variable it points to, with fake addresses on every box, so students see where `p` points rather than reading a number. Covers plain pointers, `NULL`, pointer parameters (`swap(&x, &y)`) and the caller's dashed boxes.
 **Done when:** in the real app, `int *p = &x;` draws an arrow to `x`; re pointing redraws it; `*p = 10` highlights `x`; `NULL` shows "points to nothing" with no arrow; `swap(&a, &b)` shows two arrows into the caller's boxes that stay apart; arrows follow the boxes on resize; reduced motion skips the draw animation; both themes keep contrast.
 - [x] Build it: engine + `VariablesPanel` arrow overlay (uncommitted working tree)
-- [ ] Verify it: `/check verify pointer arrows`
+- [x] Verify it: `/check verify pointer arrows`
 - [ ] Test it: `/test pointer arrows`
 code in `src/engine/`, `src/features/playground/VariablesPanel.tsx`
 
