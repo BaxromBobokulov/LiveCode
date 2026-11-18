@@ -25,3 +25,6 @@ dist-ssr
 
 # Environment variables (real keys live only in .env, never committed)
 .env
+
+# Claude Code personal settings (skills/ is shared and committed)
+.claude/settings.local.json

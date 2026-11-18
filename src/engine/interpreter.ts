@@ -5,6 +5,7 @@ import {
   arithmetic,
   convert,
   formatNumber,
+  MAX_ARRAY_SIZE,
   needsParens,
   parse,
   pointerError,
@@ -13,11 +14,14 @@ import {
   stringError,
   stringResultError,
   toSource,
+  typeText,
   writesText,
+  type Accessor,
   type BinaryOp,
   type Declarator,
   type Expr,
   type FunctionDecl,
+  type Init,
   type NumType,
   type Program,
   type Stmt,
@@ -25,8 +29,18 @@ import {
   type StructDef,
   type SwitchLabel,
   type Target,
+  type ValueType,
 } from './parser'
-import { fieldKey, variableKey, type ArrayView, type GridCell, type GridView, type LoopInfo, type Phrase, type Step, type Variable } from './types'
+import {
+  variableKey,
+  type AnyArrayView,
+  type FieldView,
+  type GridCell,
+  type LoopInfo,
+  type Phrase,
+  type Step,
+  type Variable,
+} from './types'
 
 /** Programs are stopped after this many steps, so a loop that never ends can't freeze the page. */
 export const MAX_STEPS = 1000
@@ -49,9 +63,6 @@ const ADDRESS_STEP = 4
 export function formatAddress(address: number): string {
   return `0x${address.toString(16)}`
 }
-
-/** Largest array (in total cells, for a 2D array) the array view can reasonably show. */
-const MAX_ARRAY_SIZE = 100
 
 // Common C library functions, so calling one gives "not supported yet" rather than "doesn't exist".
 const libraryFunctions = new Set([
@@ -94,21 +105,47 @@ const compareCode = (text: string, index: number) => (text.charCodeAt(index) || 
 /** `ended` is set once the block that declared the variable is over, so a pointer to it can't be followed. */
 type Scalar = { kind: 'scalar'; type: NumType; value: number | null; address: number; ended?: true }
 /** The variable a pointer points to: the slot itself (it may live in another call), plus its name. */
-type PointerTarget = { name: string; slot: Scalar }
-/** `int *p`: points to an int variable (`type` is the pointee's type), or 'NULL', or null before it gets an address. */
-type PointerStore = { kind: 'pointer'; type: NumType; target: PointerTarget | 'NULL' | null; address: number; ended?: true }
+type PointerTarget = { name: string; slot: Scalar | StructStore }
+/**
+ * `int *p` / `struct Point *p`: points to a variable of `type` (the pointee's type), or 'NULL', or null
+ * before it gets an address.
+ */
+type PointerStore = { kind: 'pointer'; type: ValueType; target: PointerTarget | 'NULL' | null; address: number; ended?: true }
 /** Arrays are shared by reference, so a function that receives one changes the caller's array. */
 type ArrayStore = { kind: 'array'; type: NumType; values: number[] }
 /** A 2D array: one inner array per row. Shared by reference, like ArrayStore. */
 type GridStore = { kind: 'grid'; type: NumType; values: number[][] }
-/** One field of a struct variable, e.g. `x` in `struct Point p`. `value` is null until it is given one. */
-type FieldSlot = { name: string; type: NumType; value: number | null }
+/**
+ * One field of a struct value: a single value (null until it is given one), a 1D array (whose `kind`,
+ * `type` and `values` make it usable wherever an ArrayStore is), or a struct of its own.
+ */
+type FieldSlot =
+  | { kind: 'scalar'; name: string; type: NumType; value: number | null }
+  | { kind: 'array'; name: string; type: NumType; values: number[] }
+  | { kind: 'struct'; name: string; value: StructValue }
+/** The fields of one struct: a struct variable's, one element's of an array of structs, or a struct field's. */
+type StructValue = { def: StructDef; fields: FieldSlot[] }
 /**
  * `struct Point p`: every struct variable has its own fields, so `p2 = p1;` copies the values
  * (unlike an array, which a function receives by reference).
  */
-type StructStore = { kind: 'struct'; def: StructDef; fields: FieldSlot[]; address: number; ended?: true }
-type Slot = Scalar | PointerStore | ArrayStore | GridStore | StructStore
+type StructStore = StructValue & { kind: 'struct'; address: number; ended?: true }
+/** `struct Point pts[3]`: one StructValue per element. Shared by reference, like any array. */
+type StructArrayStore = { kind: 'structArray'; def: StructDef; items: StructValue[] }
+type Slot = Scalar | PointerStore | ArrayStore | GridStore | StructStore | StructArrayStore
+
+/**
+ * Where a value lives, as found by following a path like `students[i].marks[j]` (see placeOf). `label` is
+ * how the explanation writes it, with indexes worked out ("students[1].marks[2]"); `changed` is what
+ * `Step.changed` names when it is written.
+ */
+type Place =
+  | { kind: 'scalar'; label: string; changed: string; type: NumType; get: () => number | null; set: (value: number) => number }
+  | { kind: 'array'; label: string; changed: string; store: ArrayStore }
+  | { kind: 'grid'; label: string; changed: string; store: GridStore }
+  | { kind: 'struct'; label: string; changed: string; value: StructValue }
+  | { kind: 'structArray'; label: string; changed: string; store: StructArrayStore }
+  | { kind: 'pointer'; label: string; changed: string; slot: PointerStore }
 
 /** One running function call. */
 type Frame = {
@@ -134,7 +171,7 @@ type Value = { type: NumType; value: number; work: string }
  * a `return` (its value, null for `void`) up to the function, a `break` up to the innermost loop or switch,
  * and a `continue` up to the innermost loop.
  */
-type Jump = { kind: 'return'; value: number | null } | { kind: 'break' } | { kind: 'continue' }
+type Jump = { kind: 'return'; value: number | StructValue | null } | { kind: 'break' } | { kind: 'continue' }
 
 /** The result of running a statement whose step is described as part of something else (a loop header). */
 type Effect = { facts: StepFact[]; changed: string[] }
@@ -165,27 +202,78 @@ function textOf(values: number[]): string | null {
 }
 
 function formatSlot(slot: Slot): string {
-  // A struct in one line, the way a debugger prints it: {x = 1, y = 2}. The panel draws its fields one by one.
-  if (slot.kind === 'struct') return `{${slot.fields.map((field) => `${field.name} = ${formatField(field)}`).join(', ')}}`
-  // A char array is shown as the text it holds, e.g. "hello".
-  const formatRow = (row: number[]) =>
-    slot.type === 'char'
-      ? quoteText(textOf(row) ?? String.fromCharCode(...row))
-      : `[${row.map((v) => formatNumber(v, slot.type)).join(', ')}]`
-  if (slot.kind === 'array') return formatRow(slot.values)
-  if (slot.kind === 'grid') return `[${slot.values.map(formatRow).join(', ')}]`
+  if (slot.kind === 'struct') return formatStruct(slot)
+  // An array of structs is drawn element by element in the array view, so its box only sums it up: [{…}, {…}].
+  if (slot.kind === 'structArray') return `[${slot.items.map(() => '{…}').join(', ')}]`
+  if (slot.kind === 'array') return formatRow(slot.type, slot.values)
+  if (slot.kind === 'grid') return `[${slot.values.map((row) => formatRow(slot.type, row)).join(', ')}]`
   // A pointer holds the address of the variable it points to.
   if (slot.kind === 'pointer') return slot.target === null ? '?' : showPointer(slot.target)
   return slot.value === null ? '?' : formatNumber(slot.value, slot.type)
 }
 
+/** A 1D array's values, "[1, 2, 3]", or for a char array the text it holds, e.g. "hello". */
+function formatRow(type: NumType, row: number[]): string {
+  if (type === 'char') return quoteText(textOf(row) ?? String.fromCharCode(...row))
+  return `[${row.map((v) => formatNumber(v, type)).join(', ')}]`
+}
+
+/** A struct in one line, the way a debugger prints it: {x = 1, y = 2}. The panel draws its fields one by one. */
+function formatStruct(value: StructValue): string {
+  return `{${value.fields.map((field) => `${field.name} = ${formatField(field)}`).join(', ')}}`
+}
+
 function formatField(field: FieldSlot): string {
+  if (field.kind === 'array') return formatRow(field.type, field.values)
+  if (field.kind === 'struct') return formatStruct(field.value)
   return field.value === null ? '?' : formatNumber(field.value, field.type)
 }
 
+/** A struct's fields for the Variables panel and the array view, a struct field with its own fields. */
+function fieldViews(value: StructValue): FieldView[] {
+  return value.fields.map((field) =>
+    field.kind === 'struct'
+      ? { name: field.name, value: formatField(field), fields: fieldViews(field.value) }
+      : { name: field.name, value: formatField(field) },
+  )
+}
+
 /** "x = 1", "y = ?": each field of a struct with its value, for an explanation. */
-function fieldValues(slot: StructStore): Phrase[] {
-  return slot.fields.map((field) => code(`${field.name} = ${formatField(field)}`))
+function fieldValues(value: StructValue): Phrase[] {
+  return value.fields.map((field) => code(`${field.name} = ${formatField(field)}`))
+}
+
+/** A struct value of type `def` whose fields have no values yet, or are all 0 (`zero`). Array fields start at 0, like arrays. */
+function newStruct(def: StructDef, zero: boolean): StructValue {
+  return {
+    def,
+    fields: def.fields.map((field): FieldSlot => {
+      if (field.kind === 'scalar') return { kind: 'scalar', name: field.name, type: field.type, value: zero ? 0 : null }
+      if (field.kind === 'array') return { kind: 'array', name: field.name, type: field.type, values: new Array<number>(field.size).fill(0) }
+      return { kind: 'struct', name: field.name, value: newStruct(field.def, zero) }
+    }),
+  }
+}
+
+/** A separate copy of a struct value, array and struct fields included, as `q = p;` makes in C. */
+function copyStructValue(value: StructValue): StructValue {
+  return { def: value.def, fields: value.fields.map(copyField) }
+}
+
+function copyField(field: FieldSlot): FieldSlot {
+  if (field.kind === 'array') return { ...field, values: [...field.values] }
+  if (field.kind === 'struct') return { ...field, value: copyStructValue(field.value) }
+  return { ...field }
+}
+
+/** Copies every field of `source` into `dest` in place, so pointers to `dest` still see it. */
+function assignFields(dest: StructValue, source: StructValue) {
+  source.fields.forEach((field, i) => (dest.fields[i] = copyField(field)))
+}
+
+/** The type a pointer to this variable must have: its own int / float / char, or its struct type. */
+function pointeeType(slot: Scalar | StructStore): ValueType {
+  return slot.kind === 'struct' ? slot.def : slot.type
 }
 
 /** A pointer's value as shown: the pointee's address, or NULL. */
@@ -205,8 +293,24 @@ function endScope(scope: Map<string, Slot>) {
   }
 }
 
-/** What the array view shows for an array, with `active` as the element or cell in use. */
-function arrayView(name: string, store: ArrayStore | GridStore, active: number | GridCell | null): ArrayView | GridView {
+/** An array the array view can show. */
+type ViewStore = ArrayStore | GridStore | StructArrayStore
+
+/**
+ * What the array view shows for an array, with `active` as the element or cell in use, and for an
+ * array of structs `field` as the active element's field the line uses.
+ */
+function arrayView(name: string, store: ViewStore, active: number | GridCell | null, field?: string): AnyArrayView {
+  if (store.kind === 'structArray') {
+    return {
+      kind: 'structs',
+      name,
+      structType: store.def.name,
+      items: store.items.map(fieldViews),
+      activeIndex: typeof active === 'number' ? active : null,
+      ...(field !== undefined && typeof active === 'number' ? { activeField: field } : {}),
+    }
+  }
   const chars = store.type === 'char' ? { chars: true as const } : {}
   if (store.kind === 'grid') {
     return { name, values: store.values.map((row) => [...row]), activeIndex: typeof active === 'object' ? active : null, ...chars }
@@ -247,7 +351,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
    * The array the current statement used, and the element or 2D cell it read or wrote (shown as active
    * in the array view). `active` is null when it used the whole array, e.g. printf("%s", name).
    */
-  let access: { name: string; store: ArrayStore | GridStore; active: number | GridCell | null } | null = null
+  let access: { name: string; store: ViewStore; active: number | GridCell | null; field?: string } | null = null
   /** 2D cells the current statement read and rand() numbers it got, explained before what the statement did. */
   let cellReads: StepFact[] = []
   /**
@@ -255,7 +359,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
    * first step uses an array element, the check highlights it too, one step early, the same way
    * the hand-authored examples do.
    */
-  let pendingCheck: { step: Step; frame: Frame; arrays: Map<string, ArrayStore | GridStore> } | null = null
+  let pendingCheck: { step: Step; frame: Frame; arrays: Map<string, ViewStore> } | null = null
 
   const frame = () => frames[frames.length - 1]
   const callerName = () => (frames.length > 1 ? frames[frames.length - 2].fn.name : null)
@@ -274,12 +378,12 @@ export function execute(program: Program, input: string[] = []): Step[] {
     // Inner blocks come last, so a shadowing variable replaces the outer one's value.
     const variables = new Map<string, Variable>()
     const shownSlots = new Map<string, Slot>()
-    let firstArray: ArrayView | GridView | null = null
+    let firstArray: AnyArrayView | null = null
     for (const scope of current.scopes) {
       for (const [name, slot] of scope) {
         variables.set(name, showVariable(name, slot))
         shownSlots.set(name, slot)
-        if ((slot.kind === 'array' || slot.kind === 'grid') && !firstArray) firstArray = arrayView(name, slot, null)
+        if ((slot.kind === 'array' || slot.kind === 'grid' || slot.kind === 'structArray') && !firstArray) firstArray = arrayView(name, slot, null)
       }
     }
     // A pointer here may point to a variable of a caller, e.g. swap(&x, &y): show that variable too,
@@ -297,7 +401,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
     if (pendingCheck) {
       const before = access && pendingCheck.frame === current ? pendingCheck.arrays.get(access.name) : undefined
-      if (access && before) pendingCheck.step.array = arrayView(access.name, before, access.active)
+      if (access && before) pendingCheck.step.array = arrayView(access.name, before, access.active, access.field)
       pendingCheck = null
     }
 
@@ -307,7 +411,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
       scope: `${current.fn.name}()`,
       variables: [...variables.values()],
       changed,
-      array: access ? arrayView(access.name, access.store, access.active) : firstArray,
+      array: access ? arrayView(access.name, access.store, access.active, access.field) : firstArray,
       loop: loopRun?.infos.at(-1) ?? null,
       output,
       explanation: [...cellReads, fact].flatMap(explain),
@@ -325,9 +429,13 @@ export function execute(program: Program, input: string[] = []): Step[] {
     // A struct is shown as one box holding its fields, so the panel needs each field on its own.
     if (slot.kind === 'struct') {
       variable.structType = slot.def.name
-      variable.fields = slot.fields.map((field) => ({ name: field.name, value: formatField(field) }))
+      variable.fields = fieldViews(slot)
     }
-    if (!program.usesPointers || slot.kind === 'array' || slot.kind === 'grid') return variable
+    if (slot.kind === 'structArray') {
+      variable.structType = slot.def.name
+      variable.length = slot.items.length
+    }
+    if (!program.usesPointers || slot.kind === 'array' || slot.kind === 'grid' || slot.kind === 'structArray') return variable
     variable.address = formatAddress(slot.address)
     if (slot.kind !== 'pointer') return variable
     variable.isPointer = true
@@ -357,12 +465,13 @@ export function execute(program: Program, input: string[] = []): Step[] {
   }
 
   /** Copies of the arrays visible right now, by name. Inner blocks win, as for variables. */
-  function arraysInScope(): Map<string, ArrayStore | GridStore> {
-    const arrays = new Map<string, ArrayStore | GridStore>()
+  function arraysInScope(): Map<string, ViewStore> {
+    const arrays = new Map<string, ViewStore>()
     for (const scope of frame().scopes) {
       for (const [name, slot] of scope) {
         if (slot.kind === 'array') arrays.set(name, { ...slot, values: [...slot.values] })
         if (slot.kind === 'grid') arrays.set(name, { ...slot, values: slot.values.map((row) => [...row]) })
+        if (slot.kind === 'structArray') arrays.set(name, { ...slot, items: slot.items.map(copyStructValue) })
       }
     }
     return arrays
@@ -371,7 +480,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
   // ----- Functions -----
 
   /** Runs a function body. `callFact` is null for main, which starts without a "call" step. */
-  function runFunction(fn: FunctionDecl, params: Map<string, Slot>, callFact: StepFact | null): number | null {
+  function runFunction(fn: FunctionDecl, params: Map<string, Slot>, callFact: StepFact | null): number | StructValue | null {
     frames.push({ fn, scopes: [params], loops: [] })
     if (callFact) emit(fn.line, callFact, fn.params.map((p) => p.name))
 
@@ -390,8 +499,17 @@ export function execute(program: Program, input: string[] = []): Step[] {
     return returned ? returned.value : null
   }
 
-  /** Calls a function from an expression. Returns null for a void function. */
+  /** Calls a function from an expression that needs a number. Returns null for a void function. */
   function evaluateCall(expr: Extract<Expr, { kind: 'call' }>): Value | null {
+    const result = callFunction(expr)
+    if (result && 'def' in result) {
+      throw new CodeError(expr.line, 'codeError.callIsStruct', { call: toSource(expr), type: result.def.name, field: result.def.fields[0].name })
+    }
+    return result
+  }
+
+  /** Calls a function, which may give back a number, a struct (`struct Point make()`), or nothing. */
+  function callFunction(expr: Extract<Expr, { kind: 'call' }>): Value | StructValue | null {
     const fn = program.functions.get(expr.name)
     if (!fn) {
       if (expr.name === 'rand' || expr.name === 'srand') return evaluateRandomCall(expr)
@@ -438,6 +556,34 @@ export function execute(program: Program, input: string[] = []): Step[] {
         params.set(param.name, slot)
         args.push(toSource(arg))
         shownParams.push({ name: param.name, value: showPointer(target), isArray: false, points: pointsTo(target) })
+      } else if (param.isArray && typeof param.type !== 'string') {
+        // An array of structs is shared like any array: the function changes the caller's elements.
+        const slot = arg.kind === 'var' ? lookup(arg.name, arg.line) : null
+        if (!slot || slot.kind !== 'structArray' || arg.kind !== 'var') {
+          throw new CodeError(expr.line, 'codeError.expectsStructArray', { fn: fn.name, param: param.name, type: param.type.name })
+        }
+        if (slot.def !== param.type) {
+          throw new CodeError(expr.line, 'codeError.arrayTypeMismatch', {
+            param: param.name,
+            paramType: typeText(param.type),
+            arg: arg.name,
+            argType: typeText(slot.def),
+          })
+        }
+        params.set(param.name, slot)
+        args.push(arg.name)
+        shownParams.push({ name: param.name, value: arg.name, isArray: true })
+      } else if (typeof param.type !== 'string') {
+        // A struct is passed by value: the parameter is a new struct with a copy of every field.
+        const def = param.type
+        const source = structValueOf(arg)
+        if (!source || source.def !== def) {
+          throw new CodeError(expr.line, 'codeError.expectsStruct', { fn: fn.name, param: param.name, type: def.name, arg: toSource(arg) })
+        }
+        const slot: StructStore = { kind: 'struct', ...copyStructValue(source), address: newAddress() }
+        params.set(param.name, slot)
+        args.push(toSource(arg))
+        shownParams.push({ name: param.name, value: formatStruct(slot), isArray: false, copyOf: toSource(arg) })
       } else if (param.isArray) {
         const slot = arg.kind === 'var' ? lookup(arg.name, arg.line) : null
         const isGridParam = param.columns !== null
@@ -485,6 +631,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     cellReads = callerReads
 
     if (result === null || fn.returnType === 'void') return null
+    if (typeof result !== 'number' || typeof fn.returnType !== 'string') return result as StructValue
     return { type: fn.returnType, value: result, work: formatNumber(result, fn.returnType) }
   }
 
@@ -598,14 +745,13 @@ export function execute(program: Program, input: string[] = []): Step[] {
     const [dest, source] = expr.args
     const notDest = () => new CodeError(expr.line, 'codeError.stringDest', { fn: expr.name })
     rejectUnsupportedText(dest)
-    if (dest.kind !== 'var') throw notDest()
-    const name = dest.name
-    const store = lookup(name, dest.line)
-    if (store.kind !== 'array' || store.type !== 'char') throw notDest()
+    const place = textPlace(dest)
+    if (!place) throw notDest()
+    const { label: name, store } = place
 
     // The source is read first, so the text is the same even when both arguments are one array.
     const text = textArgument(expr.name, source)
-    const start = expr.name === 'strcat' ? readText(name, expr.line, notDest).length : 0
+    const start = expr.name === 'strcat' ? textIn(place, expr.line).length : 0
     const count = start + text.length
     const size = store.values.length
     if (count + 1 > size) {
@@ -619,19 +765,17 @@ export function execute(program: Program, input: string[] = []): Step[] {
       expr.name === 'strcpy'
         ? { kind: 'strcpy', name, text: quoteText(text), count }
         : { kind: 'strcat', name, text: quoteText(text), start, result: quoteText(textOf(store.values) ?? ''), count }
-    emit(expr.line, fact, [name])
+    emit(expr.line, fact, [place.changed])
   }
 
-  /** The text of a <string.h> argument: a "string", or a char array named on its own. */
+  /** The text of a <string.h> argument: a "string", or a char array named on its own or a char array field. */
   function textArgument(fn: string, arg: Expr): string {
     if (arg.kind === 'string') {
       charCodes(arg.value, arg.line) // Checks that it is plain ASCII.
       return arg.value
     }
     rejectUnsupportedText(arg)
-    const notText = () => new CodeError(arg.line, 'codeError.stringArg', { fn })
-    if (arg.kind !== 'var') throw notText()
-    return readText(arg.name, arg.line, notText)
+    return readText(arg, arg.line, () => new CodeError(arg.line, 'codeError.stringArg', { fn }))
   }
 
   /** Text arguments that are fine in real C but need a pointer into an array, which this version doesn't have. */
@@ -676,7 +820,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     } else {
       const slot = lookup(of.name, of.line)
       if (slot.kind === 'pointer') throw sizeofError(expr.line, 'Pointer')
-      if (slot.kind === 'struct') throw sizeofError(expr.line, 'Struct')
+      if (slot.kind === 'struct' || slot.kind === 'structArray') throw sizeofError(expr.line, 'Struct')
       // An array parameter only holds the caller's array's address, so real C would give that address's size.
       const isParam = frame().scopes[0].get(of.name) === slot && frame().fn.params.some((p) => p.name === of.name)
       if (slot.kind !== 'scalar' && isParam) throw sizeofError(expr.line, 'ArrayParam', { name: of.name })
@@ -723,98 +867,340 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
   function readScalar(name: string, line: number): Value {
     const slot = lookup(name, line)
-    if (slot.kind === 'array') throw new CodeError(line, 'codeError.isArray', { name })
+    if (slot.kind === 'array' || slot.kind === 'structArray') throw new CodeError(line, 'codeError.isArray', { name })
     if (slot.kind === 'grid') throw new CodeError(line, 'codeError.isGrid', { name })
     if (slot.kind === 'pointer') throw new CodeError(line, 'codeError.pointerAsNumber', { name, deref: `*${name}` })
-    if (slot.kind === 'struct') throw isStructError(name, slot, line)
+    if (slot.kind === 'struct') throw isStructError(name, slot.def, line)
     if (slot.value === null) throw new CodeError(line, 'codeError.noValue', { name })
     return { type: slot.type, value: slot.value, work: formatNumber(slot.value, slot.type) }
   }
 
   // ----- Structs -----
 
-  /** A struct variable used where one value is expected, e.g. `p + 1` or `printf("%d", p)`. */
-  function isStructError(name: string, slot: StructStore, line: number): CodeError {
-    return new CodeError(line, 'codeError.isStruct', { name, type: slot.def.name, field: slot.def.fields[0].name })
+  /** A struct used where one value is expected, e.g. `p + 1` or `printf("%d", p)`. `name` is how the code writes it. */
+  function isStructError(name: string, def: StructDef, line: number): CodeError {
+    return new CodeError(line, 'codeError.isStruct', { name, type: def.name, field: def.fields[0].name })
   }
 
-  /** The field `p.x` refers to. `p` must be a struct variable whose struct has a field named `x`. */
-  function fieldOf(expr: Extract<Expr, { kind: 'field' }>): FieldSlot {
-    const slot = lookup(expr.name, expr.line)
-    if (slot.kind !== 'struct') throw new CodeError(expr.line, 'codeError.notStruct', { name: expr.name, field: expr.field })
-    const field = slot.fields.find((f) => f.name === expr.field)
-    if (!field) {
-      throw new CodeError(expr.line, 'codeError.noField', {
-        type: slot.def.name,
-        field: expr.field,
-        fields: slot.def.fields.map((f) => code(f.name)),
-      })
+  /** A variable as the start of a path. */
+  function slotPlace(name: string, slot: Slot): Place {
+    const at = { label: name, changed: name }
+    switch (slot.kind) {
+      case 'scalar':
+        return { kind: 'scalar', ...at, type: slot.type, get: () => slot.value, set: (value) => (slot.value = convert(value, slot.type)) }
+      case 'array':
+        return { kind: 'array', ...at, store: slot }
+      case 'grid':
+        return { kind: 'grid', ...at, store: slot }
+      case 'struct':
+        return { kind: 'struct', ...at, value: slot }
+      case 'structArray':
+        return { kind: 'structArray', ...at, store: slot }
+      case 'pointer':
+        return { kind: 'pointer', ...at, slot }
     }
-    return field
   }
 
   /**
-   * Copies every field of the struct `source` into `slot` (the struct variable `name`), as `p2 = p1;`
-   * does in C: afterwards the two are separate, so changing one doesn't change the other.
+   * Follows a path like `students[i].marks[j]`, `p->gpa` or `a.born.day` from its variable, checking that
+   * each step fits: `.` needs a struct, `->` a pointer to a struct, `[ ]` an array. The innermost array it
+   * indexes becomes this step's array access, so the array view shows that element.
    */
-  function copyStruct(name: string, slot: StructStore, source: Expr, line: number) {
-    const from = source.kind === 'var' ? lookup(source.name, source.line) : null
-    if (!from || from.kind !== 'struct') {
-      throw new CodeError(line, 'codeError.structAssign', { name, type: slot.def.name, field: slot.def.fields[0].name })
-    }
-    if (from.def !== slot.def) {
-      throw new CodeError(line, 'codeError.structTypeMismatch', {
-        name,
-        type: slot.def.name,
-        value: toSource(source),
-        valueType: from.def.name,
-      })
-    }
-    from.fields.forEach((field, i) => (slot.fields[i].value = field.value))
+  function placeOf(expr: Extract<Expr, { kind: 'var' | 'index' | 'cell' | 'member' }>): Place {
+    let path: Accessor[] = []
+    if (expr.kind === 'index') path = [{ kind: 'index', index: expr.index }]
+    if (expr.kind === 'cell') path = [{ kind: 'index', index: expr.row }, { kind: 'index', index: expr.col }]
+    if (expr.kind === 'member') path = expr.path
+
+    let place = slotPlace(expr.name, lookup(expr.name, expr.line))
+    // `(*p).x` starts at the struct p points to, the same as p->x.
+    if (expr.kind === 'member' && expr.deref) place = followStructPointer(place, expr.name, expr.line, firstField(path), true)
+    // Past an array element, a write is shown on that whole array, the same way `arr[i] = 1;` names arr.
+    let inArray = false
+
+    path.forEach((accessor, i) => {
+      if (accessor.kind === 'index') {
+        place = indexInto(place, accessor.index, expr.line, path[i + 1])
+        inArray = true
+        return
+      }
+      const { field, arrow } = accessor
+      if (arrow) place = followStructPointer(place, expr.name, expr.line, field, false)
+      else if (place.kind === 'pointer' && typeof place.slot.type !== 'string') {
+        throw new CodeError(expr.line, 'codeError.dotOnPointer', { name: place.label, field })
+      }
+      if (place.kind !== 'struct') throw new CodeError(expr.line, 'codeError.notStruct', { name: place.label, field })
+      const value = place.value
+      const slot = value.fields.find((f) => f.name === field)
+      if (!slot) {
+        throw new CodeError(expr.line, 'codeError.noField', {
+          type: value.def.name,
+          field,
+          fields: value.def.fields.map((f) => code(f.name)),
+        })
+      }
+      const label = `${place.label}${arrow ? '->' : '.'}${field}`
+      const changed = inArray ? place.changed : `${place.changed}.${field}`
+      place = fieldPlace(slot, label, changed)
+    })
+    return place
   }
 
-  /** `p2 = p1;`. Any other operator, like `p2 += p1` or `p2++`, would need a number. */
-  function assignStruct(stmt: Extract<Stmt, { kind: 'assign' | 'update' }>, name: string, slot: StructStore): Effect {
-    if (stmt.kind === 'update' || stmt.op !== '=') throw isStructError(name, slot, stmt.line)
-    copyStruct(name, slot, stmt.value, stmt.line)
-    const fact: StepFact = { kind: 'copyStruct', name, type: slot.def.name, source: toSource(stmt.value), values: fieldValues(slot), isDeclaration: false }
-    return { facts: [fact], changed: [name] }
+  /** The first field a member path names, e.g. "x" in `(*p).x`. */
+  function firstField(path: Accessor[]): string {
+    const first = path.find((a) => a.kind === 'field')
+    return first?.kind === 'field' ? first.field : ''
   }
 
-  /** `struct Point p;`, `struct Point p = {1, 2};` or `struct Point q = p;` */
+  /**
+   * `p->x` or `(*p).x` (`isDeref`): the struct the pointer p points to. Only a pointer to a struct can be
+   * followed this way, and only a variable can be one, so the pointer is always the path's own variable.
+   */
+  function followStructPointer(place: Place, name: string, line: number, field: string, isDeref: boolean): Place {
+    if (place.kind !== 'pointer' || typeof place.slot.type === 'string') {
+      throw new CodeError(line, 'codeError.arrowNotPointer', { name: place.label, field })
+    }
+    const pointee = follow(name, line)
+    if (pointee.slot.kind !== 'struct') throw new CodeError(line, 'codeError.arrowNotPointer', { name: place.label, field })
+    const source = isDeref ? `(*${name}).${field}` : `${name}->${field}`
+    // `s->gpa = s->gpa + 1` uses it twice, but one note is enough.
+    if (!cellReads.some((fact) => fact.kind === 'arrow' && fact.source === source)) {
+      cellReads.push({ kind: 'arrow', pointer: name, source, target: pointee.name, field })
+    }
+    return { kind: 'struct', label: isDeref ? `(*${name})` : name, changed: pointeeKey(pointee), value: pointee.slot }
+  }
+
+  /** One field of a struct, as a place. */
+  function fieldPlace(slot: FieldSlot, label: string, changed: string): Place {
+    if (slot.kind === 'array') return { kind: 'array', label, changed, store: slot }
+    if (slot.kind === 'struct') return { kind: 'struct', label, changed, value: slot.value }
+    return { kind: 'scalar', label, changed, type: slot.type, get: () => slot.value, set: (value) => (slot.value = convert(value, slot.type)) }
+  }
+
+  /** `[i]` on a place: an element of an array, an array field, a row of a 2D array, or an array of structs. */
+  function indexInto(place: Place, indexExpr: Expr, line: number, next: Accessor | undefined): Place {
+    const { label, changed } = place
+    const outside = (size: number) => (i: number) => ({ key: 'codeError.indexOutside' as const, values: { name: label, index: i, size, last: size - 1 } })
+    if (place.kind === 'structArray') {
+      const { store } = place
+      const index = evaluateIndex(indexExpr, store.items.length, line, outside(store.items.length))
+      access = { name: label, store, active: index, field: next?.kind === 'field' ? next.field : undefined }
+      return { kind: 'struct', label: `${label}[${index}]`, changed, value: store.items[index] }
+    }
+    if (place.kind === 'grid') {
+      // A row of a 2D array, which the next [ ] indexes like a 1D array.
+      const rows = place.store.values
+      const row = evaluateIndex(indexExpr, rows.length, line, outside(rows.length))
+      return { kind: 'array', label: `${label}[${row}]`, changed, store: { kind: 'array', type: place.store.type, values: rows[row] } }
+    }
+    if (place.kind !== 'array') throw new CodeError(line, 'codeError.notArray', { name: label })
+    const array = place.store
+    const index = evaluateIndex(indexExpr, array.values.length, line, outside(array.values.length))
+    access = { name: label, store: array, active: index }
+    return {
+      kind: 'scalar',
+      label: `${label}[${index}]`,
+      changed,
+      type: array.type,
+      get: () => array.values[index],
+      set: (value) => (array.values[index] = convert(value, array.type)),
+    }
+  }
+
+  /** A place that holds one value, as something to read and write (see resolveTarget). */
+  function scalarTarget(place: Place, line: number) {
+    if (place.kind === 'struct') throw isStructError(place.label, place.value.def, line)
+    if (place.kind !== 'scalar') {
+      throw new CodeError(line, 'codeError.assignArray', { name: place.label, example: `${place.label}[0] = 1;` })
+    }
+    const { label, type } = place
+    return {
+      label,
+      changed: place.changed,
+      type,
+      read: (): Value => {
+        const value = place.get()
+        if (value === null) throw new CodeError(line, 'codeError.noValue', { name: label })
+        return { type, value, work: formatNumber(value, type) }
+      },
+      write: place.set,
+    }
+  }
+
+  /**
+   * The struct an expression stands for, as it is now (not a copy): a struct variable, `students[i]`,
+   * `s.born`, `*p`, or what a function like `make()` gives back. Null when it isn't a struct.
+   */
+  function structValueOf(expr: Expr): StructValue | null {
+    if (expr.kind === 'call') {
+      const result = callFunction(expr)
+      return result && 'def' in result ? result : null
+    }
+    if (expr.kind === 'deref') {
+      const pointee = follow(expr.name, expr.line)
+      return pointee.slot.kind === 'struct' ? pointee.slot : null
+    }
+    if (expr.kind === 'var' || expr.kind === 'index' || expr.kind === 'member') {
+      const place = placeOf(expr)
+      return place.kind === 'struct' ? place.value : null
+    }
+    return null
+  }
+
+  /**
+   * Copies every field of the struct `source` into `dest` (written `name` in the code), as `p2 = p1;` does
+   * in C: afterwards the two are separate, so changing one doesn't change the other.
+   */
+  function copyStruct(name: string, dest: StructValue, source: Expr, line: number) {
+    const from = structValueOf(source)
+    if (!from) throw new CodeError(line, 'codeError.structAssign', { name, type: dest.def.name, field: dest.def.fields[0].name })
+    if (from.def !== dest.def) {
+      throw new CodeError(line, 'codeError.structTypeMismatch', { name, type: dest.def.name, value: toSource(source), valueType: from.def.name })
+    }
+    assignFields(dest, from)
+  }
+
+  /** How a whole-struct copy into `name` is explained: from another struct, or from what a function gave back. */
+  function copyFact(name: string, value: StructValue, source: Expr, isDeclaration: boolean): StepFact {
+    const values = fieldValues(value)
+    if (source.kind === 'call') return { kind: 'structFromCall', name, type: value.def.name, call: toSource(source), values, isDeclaration }
+    return { kind: 'copyStruct', name, type: value.def.name, source: toSource(source), values, isDeclaration }
+  }
+
+  /** `p2 = p1;`, `students[i] = s;`, `*p = q;`. Any other operator, like `p2 += p1` or `p2++`, would need a number. */
+  function assignStruct(stmt: Extract<Stmt, { kind: 'assign' | 'update' }>, place: Extract<Place, { kind: 'struct' }>): Effect {
+    if (stmt.kind === 'update' || stmt.op !== '=') throw isStructError(place.label, place.value.def, stmt.line)
+    copyStruct(place.label, place.value, stmt.value, stmt.line)
+    return { facts: [copyFact(place.label, place.value, stmt.value, false)], changed: [place.changed] }
+  }
+
+  /**
+   * Fills a struct from a `{ ... }` list, field by field in order, as C does: a value for each plain
+   * field, a `{ }` list or "text" for an array field, a `{ }` list or another struct for a struct field.
+   * Everything left out is 0. Returns whether anything was left out.
+   */
+  function fillStruct(value: StructValue, items: Init[], label: string, line: number): boolean {
+    const { def } = value
+    if (items.length > def.fields.length) {
+      throw new CodeError(line, 'codeError.tooManyFieldValues', { name: label, type: def.name, count: def.fields.length, given: items.length })
+    }
+    let zeroed = items.length < def.fields.length
+    value.fields.forEach((field, i) => {
+      const item = items[i]
+      const name = `${label}.${field.name}`
+      if (!item) {
+        value.fields[i] = field.kind === 'struct' ? { ...field, value: newStruct(field.value.def, true) } : field.kind === 'scalar' ? { ...field, value: 0 } : field
+        return
+      }
+      if (field.kind === 'scalar') {
+        if (item.kind === 'list') throw new CodeError(item.line, 'codeError.notArrayInit', { name })
+        if (item.kind === 'string') {
+          throw new CodeError(item.line, field.type === 'char' ? 'codeError.stringIntoChar' : 'codeError.stringIntoNonChar', { name, type: field.type })
+        }
+        field.value = convert(evaluate(item.expr).value, field.type)
+      } else if (field.kind === 'array') {
+        const size = field.values.length
+        if (item.kind === 'expr') throw new CodeError(item.line, 'codeError.arrayFieldInit', { name })
+        field.values.fill(0)
+        if (item.kind === 'string') {
+          if (field.type !== 'char') throw new CodeError(item.line, 'codeError.stringIntoNonChar', { name, type: field.type })
+          const codes = charCodes(item.text, item.line)
+          if (codes.length + 1 > size) {
+            throw new CodeError(item.line, 'codeError.stringTooLong', { text: quoteText(item.text), needed: codes.length + 1, count: codes.length, name, size })
+          }
+          codes.forEach((c, j) => (field.values[j] = c))
+          return
+        }
+        if (item.items.length > size) throw new CodeError(item.line, 'codeError.tooManyValues', { name, size, given: item.items.length })
+        item.items.forEach((element, j) => {
+          if (element.kind !== 'expr') throw new CodeError(element.line, 'codeError.notArrayInit', { name: `${name}[${j}]` })
+          field.values[j] = convert(evaluate(element.expr).value, field.type)
+        })
+        if (item.items.length < size) zeroed = true
+      } else if (item.kind === 'list') {
+        if (fillStruct(field.value, item.items, name, item.line)) zeroed = true
+      } else if (item.kind === 'expr') {
+        copyStruct(name, field.value, item.expr, item.line)
+      } else {
+        throw new CodeError(item.line, 'codeError.structAssign', { name, type: field.value.def.name, field: field.value.def.fields[0].name })
+      }
+    })
+    return zeroed
+  }
+
+  /** `struct Point p;`, `= {1, 2}`, `= q`, `= make()`, or a pointer to a struct, or an array of structs. */
   function declareStruct(def: StructDef, d: StructDeclarator): Effect {
     const scope = frame().scopes[frame().scopes.length - 1]
     if (scope.has(d.name)) throw new CodeError(d.line, 'codeError.alreadyDeclared', { name: d.name })
-    const slot: StructStore = {
-      kind: 'struct',
-      def,
-      fields: def.fields.map((field) => ({ ...field, value: null })),
-      address: newAddress(),
-    }
+    if (d.isPointer) return declareStructPointer(def, d, scope)
+    if (d.isArray) return declareStructArray(def, d, scope)
 
+    const slot: StructStore = { kind: 'struct', ...newStruct(def, false), address: newAddress() }
+    const init = d.init
     let fact: StepFact
-    if (d.values) {
-      const values = d.values
-      if (values.length > def.fields.length) {
-        throw new CodeError(d.line, 'codeError.tooManyFieldValues', {
-          name: d.name,
-          type: def.name,
-          count: def.fields.length,
-          given: values.length,
-        })
-      }
-      // Like a partly filled array, C sets every field left out of the { } to 0.
-      slot.fields.forEach((field, i) => (field.value = i < values.length ? convert(evaluate(values[i]).value, field.type) : 0))
-      fact = { kind: 'declareStructValues', name: d.name, type: def.name, values: fieldValues(slot), zeroed: values.length < def.fields.length }
-    } else if (d.copyOf) {
-      copyStruct(d.name, slot, d.copyOf, d.line)
-      fact = { kind: 'copyStruct', name: d.name, type: def.name, source: toSource(d.copyOf), values: fieldValues(slot), isDeclaration: true }
+    if (init?.kind === 'list') {
+      const zeroed = fillStruct(slot, init.items, d.name, d.line)
+      fact = { kind: 'declareStructValues', name: d.name, type: def.name, values: fieldValues(slot), zeroed }
+    } else if (init?.kind === 'expr') {
+      copyStruct(d.name, slot, init.expr, d.line)
+      fact = copyFact(d.name, slot, init.expr, true)
+    } else if (init) {
+      throw new CodeError(d.line, 'codeError.structAssign', { name: d.name, type: def.name, field: def.fields[0].name })
     } else {
       fact = { kind: 'declareStruct', name: d.name, type: def.name, fields: def.fields.map((field) => code(field.name)) }
     }
 
     scope.set(d.name, slot)
     return { facts: [fact], changed: [d.name] }
+  }
+
+  /** `struct Point *p;`, `struct Point *p = &a;` or `= NULL`: like an int pointer, but it points to a struct. */
+  function declareStructPointer(def: StructDef, d: StructDeclarator, scope: Map<string, Slot>): Effect {
+    const slot: PointerStore = { kind: 'pointer', type: def, target: null, address: newAddress() }
+    const init = d.init
+    if (init) {
+      const notAddress = () => new CodeError(d.line, 'codeError.notAddress', { name: d.name, value: init.kind === 'expr' ? toSource(init.expr) : '{ ... }' })
+      if (init.kind !== 'expr') throw notAddress()
+      setPointer(d.name, slot, pointerValue(init.expr, notAddress), d.line)
+    }
+    scope.set(d.name, slot)
+    const points = slot.target === null ? null : pointsTo(slot.target)
+    return { facts: [{ kind: 'declarePointer', name: d.name, points }], changed: [d.name] }
+  }
+
+  /**
+   * `struct Student students[3];` or `= {{...}, {...}}`, one `{ }` (or struct variable) per element. As for
+   * any array with a `{ }`, elements and fields left out are 0; without one, the fields have no values yet.
+   */
+  function declareStructArray(def: StructDef, d: StructDeclarator, scope: Map<string, Slot>): Effect {
+    const init = d.init
+    if (init && init.kind !== 'list') throw new CodeError(d.line, 'codeError.structArrayInit', { name: d.name, type: def.name })
+    const items = init?.items ?? []
+    // `{1, 2, 3, 4}` leaves out the inner { }, which C allows but is hard to read; say so before counting.
+    if (items.some((item) => item.kind === 'string' || (item.kind === 'expr' && item.expr.kind === 'number'))) {
+      throw new CodeError(d.line, 'codeError.structArrayInit', { name: d.name, type: def.name })
+    }
+    const size = d.size ? evaluateSize(d.size, d) : items.length
+    checkArraySize(size, d)
+    if (items.length > size) throw new CodeError(d.line, 'codeError.tooManyValues', { name: d.name, size, given: items.length })
+
+    const store: StructArrayStore = { kind: 'structArray', def, items: Array.from({ length: size }, () => newStruct(def, init !== null)) }
+    let zeroed = items.length < size
+    items.forEach((item, i) => {
+      const label = `${d.name}[${i}]`
+      if (item.kind === 'list') {
+        if (fillStruct(store.items[i], item.items, label, item.line)) zeroed = true
+        return
+      }
+      // `{a, b}` with struct variables copies them; `{1, 2, 3, 4}` without inner { } is left out (see AGENTS.md).
+      const from = item.kind === 'expr' ? structValueOf(item.expr) : null
+      if (!from || from.def !== def) throw new CodeError(item.line, 'codeError.structArrayInit', { name: d.name, type: def.name })
+      assignFields(store.items[i], from)
+    })
+
+    scope.set(d.name, store)
+    const values = init ? store.items.map((item, i) => code(`${d.name}[${i}] = ${formatStruct(item)}`)) : null
+    return { facts: [{ kind: 'declareStructArray', name: d.name, type: def.name, size, values, zeroed }], changed: [d.name] }
   }
 
   // ----- Pointers -----
@@ -843,10 +1229,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     if (expr.kind === 'address') {
       const slot = lookup(expr.name, expr.line)
       if (slot.kind === 'pointer') throw pointerError(expr.line, 'unsupported.pointerToPointer')
-      if (slot.kind === 'struct') {
-        throw new UnsupportedConstructError(expr.line, { key: 'construct.structPointer' }, { key: 'unsupported.structPointer' })
-      }
-      if (slot.kind !== 'scalar') throw pointerError(expr.line, 'unsupported.pointerToArray')
+      if (slot.kind !== 'scalar' && slot.kind !== 'struct') throw pointerError(expr.line, 'unsupported.pointerToArray')
       return { name: expr.name, slot }
     }
     if (expr.kind === 'var') {
@@ -859,14 +1242,17 @@ export function execute(program: Program, input: string[] = []): Step[] {
     throw notAddress()
   }
 
-  /** Points the pointer `name` (of type `slot.type`) at `target`, checking the types match: an int * only points to an int. */
+  /**
+   * Points the pointer `name` (of type `slot.type`) at `target`, checking the types match: an int * only
+   * points to an int, a struct Point * only to a struct Point.
+   */
   function setPointer(name: string, slot: PointerStore, target: PointerTarget | 'NULL', line: number) {
-    if (target !== 'NULL' && target.slot.type !== slot.type) {
+    if (target !== 'NULL' && pointeeType(target.slot) !== slot.type) {
       throw new CodeError(line, 'codeError.pointerTypeMismatch', {
         name,
-        pointerType: slot.type,
+        pointerType: typeText(slot.type),
         target: target.name,
-        targetType: target.slot.type,
+        targetType: typeText(pointeeType(target.slot)),
       })
     }
     slot.target = target
@@ -906,6 +1292,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
     if (store.kind === 'grid') {
       throw new CodeError(expr.line, 'codeError.gridNeedsTwo', { name: expr.name })
     }
+    // `students[i]` is a whole struct; a number is needed here.
+    if (store.kind === 'structArray') throw isStructError(toSource(expr), store.def, expr.line)
     if (store.kind !== 'array') throw new CodeError(expr.line, 'codeError.notArray', { name: expr.name })
     const size = store.values.length
     const index = evaluateIndex(expr.index, size, expr.line, (i) => ({
@@ -961,7 +1349,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     if (target.kind === 'var') {
       const slot = lookup(target.name, target.line)
       if (slot.kind === 'pointer') throw new CodeError(target.line, 'codeError.pointerAsNumber', { name: target.name, deref: `*${target.name}` })
-      if (slot.kind === 'struct') throw isStructError(target.name, slot, target.line)
+      if (slot.kind === 'struct') throw isStructError(target.name, slot.def, target.line)
       if (slot.kind !== 'scalar') {
         const example = slot.kind === 'grid' ? `${target.name}[0][0] = 1;` : `${target.name}[0] = 1;`
         throw new CodeError(target.line, 'codeError.assignArray', { name: target.name, example })
@@ -977,6 +1365,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
     if (target.kind === 'deref') {
       const pointee = follow(target.name, target.line)
       const slot = pointee.slot
+      if (slot.kind === 'struct') throw isStructError(`*${target.name}`, slot.def, target.line)
       cellReads.push({ kind: 'derefWrite', pointer: target.name, target: pointee.name })
       return {
         label: `*${target.name}`,
@@ -989,21 +1378,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
         write: (value: number) => (slot.value = convert(value, slot.type)),
       }
     }
-    if (target.kind === 'field') {
-      const field = fieldOf(target)
-      const label = toSource(target)
-      return {
-        label,
-        // Only this field is highlighted, inside the struct's box.
-        changed: fieldKey({ name: target.name }, target.field),
-        type: field.type,
-        read: (): Value => {
-          if (field.value === null) throw new CodeError(target.line, 'codeError.noValue', { name: label })
-          return { type: field.type, value: field.value, work: formatNumber(field.value, field.type) }
-        },
-        write: (value: number) => (field.value = convert(value, field.type)),
-      }
-    }
+    // A field: only it is highlighted, inside the struct's box ("p.x"), or its whole array of structs.
+    if (target.kind === 'member') return scalarTarget(placeOf(target), target.line)
     if (target.kind === 'cell') {
       const { store, row, col } = cellOf(target)
       return {
@@ -1099,23 +1475,39 @@ export function execute(program: Program, input: string[] = []): Step[] {
     }
   }
 
-  function checkArraySize(size: number, d: Declarator) {
+  function checkArraySize(size: number, d: Pick<Declarator, 'name' | 'line'>) {
     if (size > MAX_ARRAY_SIZE) {
       throw new CodeError(d.line, 'codeError.arrayTooBig', { name: d.name, max: MAX_ARRAY_SIZE })
     }
   }
 
   /**
-   * The text in the char array `name`, for printf's %s or puts. Marks the whole array as used,
-   * so the array view shows it.
+   * A char array that holds text: one named on its own (`name`), or a char array field (`s.name`,
+   * `students[i].name`). Null for anything else.
    */
-  function readText(name: string, line: number, notText: () => CodeError): string {
-    const slot = lookup(name, line)
-    if (slot.kind !== 'array' || slot.type !== 'char') throw notText()
-    const text = textOf(slot.values)
-    if (text === null) throw new CodeError(line, 'codeError.noTerminator', { name })
-    access = { name, store: slot, active: null }
+  function textPlace(expr: Expr): { label: string; changed: string; store: ArrayStore } | null {
+    if (expr.kind === 'var') {
+      const slot = lookup(expr.name, expr.line)
+      return slot.kind === 'array' && slot.type === 'char' ? { label: expr.name, changed: expr.name, store: slot } : null
+    }
+    if (expr.kind !== 'member') return null
+    const place = placeOf(expr)
+    return place.kind === 'array' && place.store.type === 'char' ? { label: place.label, changed: place.changed, store: place.store } : null
+  }
+
+  /** The text in a char array, up to its \0. Marks the whole array as used, so the array view shows it. */
+  function textIn(place: { label: string; store: ArrayStore }, line: number): string {
+    const text = textOf(place.store.values)
+    if (text === null) throw new CodeError(line, 'codeError.noTerminator', { name: place.label })
+    access = { name: place.label, store: place.store, active: null }
     return text
+  }
+
+  /** The text in a char array (see textPlace), for printf's %s, puts or a <string.h> function. */
+  function readText(expr: Expr, line: number, notText: () => CodeError): string {
+    const place = textPlace(expr)
+    if (!place) throw notText()
+    return textIn(place, line)
   }
 
   /** `int grid[rows][cols] = {{...}, {...}};` */
@@ -1142,7 +1534,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
   }
 
   /** An array size (or a 2D array's row or column count): a whole number above 0. */
-  function evaluateSize(expr: Expr, d: Declarator): number {
+  function evaluateSize(expr: Expr, d: Pick<Declarator, 'name' | 'line'>): number {
     const value = evaluate(expr)
     if (value.type !== 'int' || value.value <= 0) {
       throw new CodeError(d.line, 'codeError.badSize', { name: d.name })
@@ -1162,6 +1554,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
 
       case 'deref': {
         const pointee = follow(expr.name, expr.line)
+        if (pointee.slot.kind === 'struct') throw isStructError(`*${expr.name}`, pointee.slot.def, expr.line)
         const { value, type } = pointee.slot
         if (value === null) throw new CodeError(expr.line, 'codeError.noValue', { name: pointee.name })
         const work = formatNumber(value, type)
@@ -1175,10 +1568,10 @@ export function execute(program: Program, input: string[] = []): Step[] {
       case 'null':
         throw new CodeError(expr.line, 'codeError.nullAsNumber')
 
-      case 'field': {
-        const field = fieldOf(expr)
-        if (field.value === null) throw new CodeError(expr.line, 'codeError.noValue', { name: toSource(expr) })
-        return { type: field.type, value: field.value, work: formatNumber(field.value, field.type) }
+      case 'member': {
+        const place = placeOf(expr)
+        if (place.kind === 'array' || place.kind === 'structArray') throw new CodeError(expr.line, 'codeError.isArray', { name: place.label })
+        return scalarTarget(place, expr.line).read()
       }
 
       case 'index': {
@@ -1257,13 +1650,28 @@ export function execute(program: Program, input: string[] = []): Step[] {
       }
     }
 
-    if (stmt.target.kind === 'var') {
-      const slot = lookup(stmt.target.name, stmt.target.line)
-      if (slot.kind === 'pointer') return assignPointer(stmt, stmt.target.name, slot)
-      if (slot.kind === 'struct') return assignStruct(stmt, stmt.target.name, slot)
+    const t = stmt.target
+    if (t.kind === 'var') {
+      const slot = lookup(t.name, t.line)
+      if (slot.kind === 'pointer') return assignPointer(stmt, t.name, slot)
+      if (slot.kind === 'struct') return assignStruct(stmt, { kind: 'struct', label: t.name, changed: t.name, value: slot })
+    }
+    // `*p = q;` with p a pointer to a struct copies q into the struct p points to.
+    if (t.kind === 'deref') {
+      const pointee = follow(t.name, t.line)
+      if (pointee.slot.kind === 'struct') {
+        cellReads.push({ kind: 'derefWrite', pointer: t.name, target: pointee.name })
+        return assignStruct(stmt, { kind: 'struct', label: `*${t.name}`, changed: pointeeKey(pointee), value: pointee.slot })
+      }
     }
 
-    const target = resolveTarget(stmt.target)
+    // A field or an element of an array of structs is found once, since its indexes may call functions.
+    let target: ReturnType<typeof resolveTarget>
+    if (t.kind === 'member' || (t.kind === 'index' && lookup(t.name, t.line).kind === 'structArray')) {
+      const place = placeOf(t)
+      if (place.kind === 'struct') return assignStruct(stmt, place)
+      target = scalarTarget(place, t.line)
+    } else target = resolveTarget(t)
     const name = target.changed
 
     if (stmt.kind === 'update') {
@@ -1347,7 +1755,7 @@ export function execute(program: Program, input: string[] = []): Step[] {
           (program.functions.has(stmt.expr.name) ||
             (stmt.expr.name !== 'rand' && !isCtypeFunction(stmt.expr.name) && !givesStringValue(stmt.expr.name)))
         ) {
-          evaluateCall(stmt.expr)
+          callFunction(stmt.expr)
           return null
         }
         emit(stmt.line, runSimple(stmt).facts[0])
@@ -1366,11 +1774,11 @@ export function execute(program: Program, input: string[] = []): Step[] {
           if (placeholder === '%%') return '%'
           const arg = stmt.args[argIndex++]
           if (arg.kind === 'string') return arg.value
-          if (placeholder === '%s' && arg.kind === 'var') {
-            return readText(arg.name, stmt.line, () =>
+          if (placeholder === '%s' && (arg.kind === 'var' || arg.kind === 'member')) {
+            return readText(arg, stmt.line, () =>
               stmt.isPuts
                 ? new CodeError(stmt.line, 'codeError.putsText')
-                : new CodeError(stmt.line, 'codeError.printfSNotText', { arg: arg.name }),
+                : new CodeError(stmt.line, 'codeError.printfSNotText', { arg: toSource(arg) }),
             )
           }
           // %p prints the same made-up address the Variables panel shows (e.g. 0x104), or NULL.
@@ -1404,9 +1812,8 @@ export function execute(program: Program, input: string[] = []): Step[] {
           }
           const text = input[inputUsed++]
           if (specifier === 's') {
-            const name = targetExpr.name
-            scanText(name, text, stmt.line, fail)
-            emit(stmt.line, { kind: 'scanText', name, text: quoteText(text), count: text.length }, [name])
+            const place = scanText(targetExpr, text, stmt.line, fail)
+            emit(stmt.line, { kind: 'scanText', name: place.label, text: quoteText(text), count: text.length }, [place.changed])
             return
           }
           const target = resolveTarget(targetExpr)
@@ -1475,12 +1882,24 @@ export function execute(program: Program, input: string[] = []): Step[] {
         const fn = frame().fn
         if (stmt.value && fn.returnType === 'void') throw new CodeError(stmt.line, 'codeError.voidReturn', { name: fn.name })
         if (!stmt.value && fn.returnType !== 'void') {
-          throw new CodeError(stmt.line, 'codeError.mustReturn', { name: fn.name, type: fn.returnType })
+          throw new CodeError(stmt.line, 'codeError.mustReturn', { name: fn.name, type: typeText(fn.returnType) })
         }
 
         if (!stmt.value || fn.returnType === 'void') {
           emit(stmt.line, { kind: 'return', name: fn.name, value: null, caller: callerName() })
           return { kind: 'return', value: null }
+        }
+        // `return p;` in a struct function gives the caller a copy of every field.
+        if (typeof fn.returnType !== 'string') {
+          const def = fn.returnType
+          const from = structValueOf(stmt.value)
+          if (!from || from.def !== def) {
+            throw new CodeError(stmt.line, 'codeError.returnStruct', { name: fn.name, type: def.name, value: toSource(stmt.value) })
+          }
+          const result = copyStructValue(from)
+          const source = toSource(stmt.value)
+          emit(stmt.line, { kind: 'return', name: fn.name, value: { source, work: source, result: formatStruct(result) }, caller: callerName() })
+          return { kind: 'return', value: result }
         }
         const value = evaluate(stmt.value)
         const result = convert(value.value, fn.returnType)
@@ -1492,21 +1911,23 @@ export function execute(program: Program, input: string[] = []): Step[] {
   }
 
   /**
-   * scanf("%s", name): stores one word from the Input field in the char array `name`,
-   * followed by the \0 that marks where the text ends.
+   * scanf("%s", name) or scanf("%s", s.name): stores one word from the Input field in the char array,
+   * followed by the \0 that marks where the text ends. Returns how the array is written and named in `changed`.
    */
-  function scanText(name: string, text: string, line: number, fail: (key: TranslationKey, values: Phrase['values']) => CodeError) {
-    const slot = lookup(name, line)
-    if (slot.kind !== 'array' || slot.type !== 'char') throw fail('codeError.scanfSNotText', { target: name })
+  function scanText(target: Target, text: string, line: number, fail: (key: TranslationKey, values: Phrase['values']) => CodeError) {
+    const place = textPlace(target)
+    if (!place) throw fail('codeError.scanfSNotText', { target: toSource(target) })
+    const { label: name, store } = place
     const nonAscii = [...text].find((char) => char.length > 1 || char.charCodeAt(0) > 127)
     if (nonAscii) throw fail('codeError.nonAsciiChar', { char: nonAscii })
-    const size = slot.values.length
+    const size = store.values.length
     if (text.length + 1 > size) {
       throw fail('codeError.scanfTooLong', { value: text, count: text.length, name, size, room: size - 1 })
     }
-    charCodes(text, line).forEach((c, i) => (slot.values[i] = c))
-    slot.values[text.length] = 0
-    access = { name, store: slot, active: null }
+    charCodes(text, line).forEach((c, i) => (store.values[i] = c))
+    store.values[text.length] = 0
+    access = { name, store, active: null }
+    return place
   }
 
   /**
@@ -1545,7 +1966,9 @@ export function execute(program: Program, input: string[] = []): Step[] {
    */
   function declareSkipped(stmt: Stmt) {
     if (stmt.kind === 'declareStruct') {
-      for (const d of stmt.declarators) declareStruct(program.structs.get(stmt.structName)!, { ...d, values: null, copyOf: null })
+      for (const d of stmt.declarators) {
+        if (!d.isArray || d.size) declareStruct(program.structs.get(stmt.structName)!, { ...d, init: null })
+      }
     }
     if (stmt.kind !== 'declare') return
     for (const d of stmt.declarators) {

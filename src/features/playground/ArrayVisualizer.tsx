@@ -1,6 +1,15 @@
 import { Fragment, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { charText, isGridView, type ArrayView, type GridCell, type GridView } from '../../engine/types'
+import {
+  charText,
+  isGridView,
+  isStructArrayView,
+  type AnyArrayView,
+  type ArrayView,
+  type GridCell,
+  type GridView,
+  type StructArrayView,
+} from '../../engine/types'
 import { useTranslation } from '../../i18n/useTranslation'
 
 // Framer Motion animates between the same color tokens via their CSS variables
@@ -15,7 +24,8 @@ const inactiveColors = {
 const transition = { duration: 0.2, ease: 'easeOut' } as const
 
 /** Equal for two steps that highlight the same elements, so a new step's { row, col } object compares equal. */
-function highlightKey(view: ArrayView | GridView): string {
+function highlightKey(view: AnyArrayView): string {
+  if (isStructArrayView(view)) return `${view.activeIndex ?? ''},${view.activeField ?? ''}`
   if (isGridView(view)) return view.activeIndex ? `${view.activeIndex.row},${view.activeIndex.col}` : ''
   return `${view.activeIndex ?? ''},${view.secondIndex ?? ''}`
 }
@@ -83,33 +93,35 @@ function IndexLabel({ index, isActive, isAnimated }: { index: number; isActive: 
   )
 }
 
-function ArrayVisualizer({ array }: { array: ArrayView | GridView }) {
+function ArrayVisualizer({ array }: { array: AnyArrayView }) {
   const reduceMotion = useReducedMotion()
   const { t } = useTranslation()
 
   // Remember which cells were highlighted before this step, so they can fade back out
   // while the newly highlighted cells fade in and pulse once.
   const [current, setCurrent] = useState(array)
-  const [previous, setPrevious] = useState<ArrayView | GridView | null>(null)
+  const [previous, setPrevious] = useState<AnyArrayView | null>(null)
   if (highlightKey(array) !== highlightKey(current)) {
     setPrevious(current)
     setCurrent(array)
   }
-  const previous1D = previous && !isGridView(previous) ? previous : null
+  const previous1D = previous && !isGridView(previous) && !isStructArrayView(previous) ? previous : null
 
   return (
     <div>
       <h3 className="mb-1.75 text-label text-textMuted">
         {t('panel.array')} <span className="font-mono font-normal">{array.name}</span>
         {/* A char array also shows the text its cells spell out, e.g. name = "hello". */}
-        {array.chars && !isGridView(array) && (
+        {!isStructArrayView(array) && array.chars && !isGridView(array) && (
           <span className="font-mono font-normal">
             {' = '}
             <span className="text-text">"{textOf(array.values)}"</span>
           </span>
         )}
       </h3>
-      {isGridView(array) ? (
+      {isStructArrayView(array) ? (
+        <StructArray view={array} before={previous && isStructArrayView(previous) ? previous.activeIndex : null} reduceMotion={!!reduceMotion} />
+      ) : isGridView(array) ? (
         <ArrayGrid grid={array} before={previous && isGridView(previous) ? previous.activeIndex : null} reduceMotion={!!reduceMotion} />
       ) : (
         <div className="flex flex-wrap gap-2">
@@ -126,6 +138,47 @@ function ArrayVisualizer({ array }: { array: ArrayView | GridView }) {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * An array of structs: a row of elements numbered like a 1D array's cells, each one a small box of its
+ * fields as labelled rows, the same as a struct's box in the Variables panel. The element in use gets the
+ * accent border; if the line uses one of its fields, only that row is tinted, otherwise the whole element.
+ */
+function StructArray({ view, before, reduceMotion }: { view: StructArrayView; before: number | null; reduceMotion: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {view.items.map((fields, index) => {
+        const isActive = view.activeIndex === index
+        const activeField = isActive ? view.activeField : undefined
+        const isWholeActive = isActive && activeField === undefined
+        return (
+          <div key={index} data-step-change={isActive || undefined} className="flex flex-col items-center gap-1">
+            <dl
+              className={`min-w-24 divide-y divide-border overflow-hidden rounded-container border transition-colors duration-200 motion-reduce:transition-none ${
+                isActive ? 'border-accent' : 'border-border'
+              } ${isWholeActive ? 'bg-accentTint' : 'bg-panel'}`}
+            >
+              {fields.map((field) => {
+                const isFieldActive = field.name === activeField
+                const onTint = isWholeActive || isFieldActive
+                return (
+                  <div
+                    key={field.name}
+                    className={`flex items-baseline justify-between gap-3 px-2 py-1 ${isFieldActive ? 'bg-accentTint' : ''}`}
+                  >
+                    <dt className={`font-mono text-caption ${onTint ? 'text-textMutedOnTint' : 'text-textMuted'}`}>{field.name}</dt>
+                    <dd className="font-mono text-body-md leading-5 text-text">{field.value}</dd>
+                  </div>
+                )
+              })}
+            </dl>
+            <IndexLabel index={index} isActive={isActive} isAnimated={!reduceMotion && (isActive || before === index)} />
+          </div>
+        )
+      })}
     </div>
   )
 }
