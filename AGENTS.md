@@ -382,6 +382,11 @@ Use Framer Motion for:
 
 Keep animations short (150–250ms) and skip them when the user's system has `prefers-reduced-motion` set.
 
+That rule covers **UI transitions and feedback** (state changes, hover, step transitions). **Decorative, attention-drawing micro-animations** are a separate, deliberate exception, for an optional or playful element only: today the animated logo (`LogoMark`) and the game-hub link's icon wiggle (`GameLink`, about 0.6s every ~8s). These may run longer and repeat on an interval of seconds, but they must:
+
+- be turned off entirely under `prefers-reduced-motion` (`useReducedMotion()` → no `animate`), not just shortened, leaving the static look;
+- never shift layout: only `transform` (rotate, scale, translate) on an element inside its own box, so nothing around it reflows.
+
 ---
 
 ## Accessibility Rules
