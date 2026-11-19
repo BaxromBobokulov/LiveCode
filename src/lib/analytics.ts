@@ -18,6 +18,8 @@ type AnalyticsEvents = {
   scanf_input_prompt_shown: { reason: 'empty' | 'notEnough' }
   language_changed: { language: Locale }
   theme_changed: { theme: Theme }
+  // The navbar's gamepad link to game.livecode.uz was clicked.
+  game_link_clicked: Record<string, never>
 }
 
 let isEnabled = false

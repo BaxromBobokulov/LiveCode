@@ -1,4 +1,5 @@
 import { MotionConfig } from 'framer-motion'
+import GameLink from './components/GameLink'
 import LanguageSwitcher from './components/LanguageSwitcher'
 import LogoMark from './components/LogoMark'
 import Tabs from './components/Tabs'
@@ -36,6 +37,7 @@ function App() {
           <div className="flex max-w-full flex-wrap items-center gap-3">
             <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
             <div className="flex items-center gap-2">
+              <GameLink />
               <LanguageSwitcher />
               <ThemeToggle />
             </div>
