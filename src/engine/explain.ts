@@ -61,6 +61,15 @@ export type StepFact =
   | { kind: 'declareStructValues'; name: string; type: string; values: Phrase[]; zeroed: boolean }
   /** `struct Point q = p;` (`isDeclaration`) or `q = p;`: every field of `source` copied into `name`. */
   | { kind: 'copyStruct'; name: string; type: string; source: string; values: Phrase[]; isDeclaration: boolean }
+  /** `struct Point q = make(1, 2);` (`isDeclaration`) or `q = make(1, 2);`: the struct `call` gave back, copied into `name`. */
+  | { kind: 'structFromCall'; name: string; type: string; call: string; values: Phrase[]; isDeclaration: boolean }
+  /**
+   * `struct Point pts[3];` (`values` is null) or `struct Point pts[2] = {{1, 2}, {3, 4}};` — `values` are
+   * "pts[0] = {x = 1, y = 2}", ...; `zeroed` when elements or fields were left out of the { } and got 0.
+   */
+  | { kind: 'declareStructArray'; name: string; type: string; size: number; values: Phrase[] | null; zeroed: boolean }
+  /** `p->x` (or `(*p).x`) used on this line: it follows the pointer p to the struct `target`. */
+  | { kind: 'arrow'; pointer: string; source: string; target: string; field: string }
   | { kind: 'assign'; target: string; value: Shown }
   | { kind: 'update'; target: string; op: '++' | '--'; result: string }
   | { kind: 'expr'; value: Shown }
@@ -87,8 +96,16 @@ export type StepFact =
   | { kind: 'switchEnter'; label: string; isDefault: boolean; value: string; stacked: Phrase[] }
   /** The case above ended with no break, so the program ran on past these labels. */
   | { kind: 'fallThrough'; labels: Phrase[] }
-  /** `points` is set for a pointer parameter: the variable it now points to, or NULL. */
-  | { kind: 'call'; name: string; args: string[]; params: { name: string; value: string; isArray: boolean; points?: PointsTo }[] }
+  /**
+   * `points` is set for a pointer parameter: the variable it now points to, or NULL. `copyOf` is set for a
+   * struct passed by value: what the parameter is a copy of, e.g. "a" or "students[1]".
+   */
+  | {
+      kind: 'call'
+      name: string
+      args: string[]
+      params: { name: string; value: string; isArray: boolean; points?: PointsTo; copyOf?: string }[]
+    }
   | { kind: 'return'; name: string; value: Shown | null; caller: string | null }
   | { kind: 'end'; name: string; caller: string | null }
   | { kind: 'print'; text: string }
@@ -206,6 +223,24 @@ export function explain(fact: StepFact): Phrase[] {
         { key: 'explain.structCopySeparate', values },
       ]
     }
+
+    case 'structFromCall':
+      return [
+        {
+          key: fact.isDeclaration ? 'explain.declareStructFromCall' : 'explain.structFromCall',
+          values: { name: fact.name, type: fact.type, call: fact.call, values: fact.values },
+        },
+      ]
+
+    case 'declareStructArray': {
+      const values = { name: fact.name, type: fact.type, size: fact.size, last: fact.size - 1 }
+      if (!fact.values) return [{ key: 'explain.declareStructArray', values }]
+      const sentence: Phrase = { key: 'explain.declareStructArrayValues', values: { ...values, values: fact.values } }
+      return fact.zeroed ? [sentence, { key: 'explain.structArrayZeroed' }] : [sentence]
+    }
+
+    case 'arrow':
+      return [{ key: 'explain.arrow', values: { pointer: fact.pointer, source: fact.source, target: fact.target, field: fact.field } }]
 
     case 'declarePointer':
       if (fact.points === null) return [{ key: 'explain.declarePointer', values: { name: fact.name } }]
@@ -340,9 +375,12 @@ export function explain(fact: StepFact): Phrase[] {
       const params: Phrase[] = fact.params.map((p): Phrase => {
         if (p.points === 'NULL') return { key: 'explain.paramPointerNull', values: { name: p.name } }
         if (p.points) return { key: 'explain.paramPointer', values: { name: p.name, ...p.points } }
+        if (p.copyOf !== undefined) return { key: 'explain.paramStruct', values: { name: p.name, source: p.copyOf, value: p.value } }
         return { key: p.isArray ? 'explain.paramArray' : 'explain.param', values: { name: p.name, value: p.value } }
       })
-      return [{ key: 'explain.call', values: { call, name: fact.name, params } }]
+      const sentence: Phrase = { key: 'explain.call', values: { call, name: fact.name, params } }
+      // A struct is passed by value, unlike an array: say so, since it is the thing students get wrong.
+      return fact.params.some((p) => p.copyOf !== undefined) ? [sentence, { key: 'explain.structByValue', values: { name: fact.name } }] : [sentence]
     }
 
     case 'return': {
