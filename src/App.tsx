@@ -9,18 +9,25 @@ import LearnScreen from './features/learn/LearnScreen'
 import PlaygroundScreen from './features/playground/PlaygroundScreen'
 import ProblemsScreen from './features/problems/ProblemsScreen'
 import { useTranslation } from './i18n/useTranslation'
-import { usePlaygroundStore, type TabId } from './store/playgroundStore'
+import { playgroundPath, sectionPath, type TabId } from './lib/routes'
+import { useDocumentTitle } from './lib/useDocumentTitle'
+import { useRouteSync } from './lib/useRouteSync'
+import { usePlaygroundStore } from './store/playgroundStore'
 
 function App() {
-  const activeTab = usePlaygroundStore((state) => state.activeTab)
-  const setTab = usePlaygroundStore((state) => state.setTab)
+  // The URL decides the section and the open item; the store follows it (see useRouteSync).
+  const route = useRouteSync()
+  useDocumentTitle(route)
+  const activeTab = route.tab
+  // The Playground tab goes back to whatever is open there.
+  const playgroundTo = usePlaygroundStore(playgroundPath)
   const { t } = useTranslation()
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: 'playground', label: t('nav.playground') },
-    { id: 'examples', label: t('nav.examples') },
-    { id: 'problems', label: t('nav.problems') },
-    { id: 'learn', label: t('nav.learn') },
+  const tabs: { id: TabId; label: string; to: string }[] = [
+    { id: 'playground', label: t('nav.playground'), to: playgroundTo },
+    { id: 'examples', label: t('nav.examples'), to: sectionPath('examples') },
+    { id: 'problems', label: t('nav.problems'), to: sectionPath('problems') },
+    { id: 'learn', label: t('nav.learn'), to: sectionPath('learn') },
   ]
 
   return (
@@ -36,7 +43,7 @@ function App() {
             <h1 className="text-brand text-text">LiveCode</h1>
           </div>
           <div className="flex max-w-full flex-wrap items-center gap-3">
-            <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+            <Tabs tabs={tabs} value={activeTab} label={t('nav.sections')} />
             <div className="flex items-center gap-2">
               <GameLink />
               <LanguageSwitcher />
@@ -45,6 +52,8 @@ function App() {
           </div>
         </header>
 
+        {/* One screen per section. The Playground stays at this one place for /, /examples/… and /problems/…,
+            so moving between those never remounts it (the editor, line follow and panels keep their state). */}
         <main className="py-6">
           {activeTab === 'playground' && <PlaygroundScreen />}
           {activeTab === 'examples' && <ExamplesScreen />}

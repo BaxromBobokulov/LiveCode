@@ -24,7 +24,10 @@ type AnalyticsEvents = {
 
 let isEnabled = false
 
-/** Start PostHog once at app startup. Page views are captured automatically. */
+/**
+ * Start PostHog once at app startup. Page views are captured automatically: on the first load and on every
+ * URL change ('history_change'), so usage can be broken down by section and problem from the path.
+ */
 export function initAnalytics() {
   const key = import.meta.env.VITE_POSTHOG_KEY
   const host = import.meta.env.VITE_POSTHOG_HOST
@@ -32,7 +35,7 @@ export function initAnalytics() {
 
   posthog.init(key, {
     api_host: host,
-    capture_pageview: true,
+    capture_pageview: 'history_change',
     // Autocapture, heatmaps and session replay record element text, which would include the user's code.
     autocapture: false,
     capture_dead_clicks: false,

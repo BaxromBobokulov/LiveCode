@@ -1,8 +1,10 @@
 import { useId, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 import Button from '../../components/Button'
 import { problemTopics, problems } from '../../data/problems'
 import type { Difficulty } from '../../data/problems/types'
 import { useTranslation } from '../../i18n/useTranslation'
+import { problemPath } from '../../lib/routes'
 import { useBadgesStore } from '../../store/badgesStore'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { useSettingsStore } from '../../store/settingsStore'
@@ -20,14 +22,20 @@ const difficultyOrder: Difficulty[] = ['easy', 'medium', 'hard']
  */
 function ProblemsScreen() {
   const problemId = usePlaygroundStore((state) => state.problemId)
-  const loadProblem = usePlaygroundStore((state) => state.loadProblem)
   const loadRandomProblem = usePlaygroundStore((state) => state.loadRandomProblem)
+  const navigate = useNavigate()
   const passedProblems = useBadgesStore((state) => state.passedProblems)
   const collapsedTopics = useSettingsStore((state) => state.collapsedTopics)
   const toggleTopic = useSettingsStore((state) => state.toggleTopic)
   const { t, locale } = useTranslation()
   const [search, setSearch] = useState('')
   const searchId = useId()
+
+  // Picked here, not by the URL, so "all solved" is known; going to the URL then finds it already open.
+  function openRandomProblem() {
+    loadRandomProblem()
+    navigate(problemPath(usePlaygroundStore.getState().problemId!))
+  }
 
   const query = normalizeForSearch(search)
   const isSearching = query !== ''
@@ -63,7 +71,7 @@ function ProblemsScreen() {
           autoComplete="off"
           className="h-11 min-w-0 flex-1 basis-60 rounded-control border border-borderStrong bg-panel px-3.5 text-body-sm text-text transition-colors placeholder:text-textMuted focus-visible:outline-2 focus-visible:outline-accent"
         />
-        <Button variant="secondary" className="min-h-11" onClick={loadRandomProblem}>
+        <Button variant="secondary" className="min-h-11" onClick={openRandomProblem}>
           {t('problems.random')}
         </Button>
       </div>
@@ -115,10 +123,10 @@ function ProblemsScreen() {
               {shownProblems.map((problem) => {
                 const isOpen = problem.id === problemId
                 return (
-                  <button
+                  // A real link, so a teacher can copy it. Going to its URL opens the problem (useRouteSync).
+                  <Link
                     key={problem.id}
-                    type="button"
-                    onClick={() => loadProblem(problem.id)}
+                    to={problemPath(problem.id)}
                     className={`flex flex-col overflow-hidden rounded-panel border bg-panel text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                       isOpen ? 'border-accent' : 'border-border hover:border-borderStrong'
                     }`}
@@ -139,7 +147,7 @@ function ProblemsScreen() {
                         {t('problems.opened')}
                       </div>
                     )}
-                  </button>
+                  </Link>
                 )
               })}
             </div>

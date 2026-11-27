@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router'
 import Button from '../../components/Button'
 import Chip from '../../components/Chip'
 import Tooltip from '../../components/Tooltip'
@@ -117,7 +118,7 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
   const newBadges = usePlaygroundStore((state) => state.newBadges)
   const allProblemsSolved = usePlaygroundStore((state) => state.allProblemsSolved)
   const check = usePlaygroundStore((state) => state.check)
-  const setTab = usePlaygroundStore((state) => state.setTab)
+  const navigate = useNavigate()
   const { t, locale } = useTranslation()
 
   // Same marking as a stale trace: a dashed outline, the text keeps its colors.
@@ -199,7 +200,7 @@ function ProblemPanel({ problem, onRunWithInput }: ProblemPanelProps) {
     <section className="rounded-panel border border-border bg-panel">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4.5 py-3.5">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-          <Button variant="secondary" onClick={() => setTab('problems')}>
+          <Button variant="secondary" onClick={() => navigate('/problems')}>
             ← {t('problem.allProblems')}
           </Button>
           <h2 className="text-body-md font-semibold">{problem.title[locale]}</h2>

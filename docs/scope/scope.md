@@ -19,6 +19,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 6 | Struct boxes | Slice 1 | in-progress |
 | 7 | Pointer and struct examples | Slice 2 | planned |
 | 8 | Pointer and struct problems | Slice 3 | planned |
+| 9 | URL routing | Routing | in-progress |
 
 ## Existing
 
@@ -72,6 +73,21 @@ Practice tasks in Masalalar on pointers and structs, write and debug kinds, so s
 
 The decision: one topic or two (`pointers`, `structs`) in `ProblemTopic`, where they sit in `problemTopics`, and which problems make the first set.
 
+## Routing
+
+### 9. URL routing · in-progress
+Every section, problem and example has its own URL (`/problems/discount`, `/examples/bubble-sort`), so Back and Forward work and teachers can share a link to one problem.
+**Done when:** loading `/problems/discount` fresh opens that problem; Back and Forward step through tabs and items; a reload keeps the code; PostHog sends a pageview per route.
+- [x] Design it (spec): `/architect url routing`
+- [ ] Build it: `/develop url routing`
+  - [ ] Router, Vercel rewrite and route parser (AC-1, AC-9, AC-10)
+  - [ ] URL to store sync, `/` redirect, `activeTab` removed (AC-2, AC-3, AC-6, AC-7, AC-8, AC-15)
+  - [ ] Links for tabs, rows and cards; Random and All problems navigate (AC-4, AC-5, AC-12)
+  - [ ] Pageviews, title, canonical and sitemap (AC-11, AC-13, AC-14)
+- [ ] Verify it: `/check verify url routing`
+- [ ] Test it: `/test url routing`
+spec [0002](../specs/0002-url-routing-sections-items.md)
+
 ## Deferred
 Out of scope for this slice, kept so the plan stays honest. Each still raises a clear "not supported yet" error today.
 - **Learn page section on pointers and structs**: what an arrow and an address mean · needs a decision
@@ -82,6 +98,8 @@ Out of scope for this slice, kept so the plan stays honest. Each still raises a 
 - **String literals through pointers**: `char *s = "text"` · needs a decision
 - **More struct syntax**: `typedef struct`, `sizeof` on structs and pointers, designated initializers, `union`, `enum` · needs a decision
 - **Function pointers** · needs a decision
+- **Code saved per problem**: following a link never loses another problem's edits · from spec 0002 · needs a decision
+- **Prerendering per route**: per item Telegram previews and Yandex indexing · from spec 0002 · needs a decision
 
 ## Legend
 

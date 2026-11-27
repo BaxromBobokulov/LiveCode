@@ -10,10 +10,7 @@ import { track } from '../lib/analytics'
 import { useBadgesStore, type BadgeId } from './badgesStore'
 import type { ExampleProgram } from '../engine/types'
 
-export type TabId = 'playground' | 'examples' | 'problems' | 'learn'
-
 type PlaygroundState = {
-  activeTab: TabId
   exampleId: string
   stepIndex: number
   isPlaying: boolean
@@ -46,11 +43,17 @@ type PlaygroundState = {
   newBadges: BadgeId[]
   /** The open problem came from "Random problem" with nothing left to solve; its panel says so. */
   allProblemsSolved: boolean
+  /**
+   * This page load found a saved problem or example that still exists, so a bare / is replaced with its URL
+   * (see useRouteSync). Never changes after startup.
+   */
+  restoredFromSave: boolean
 
-  setTab: (tab: TabId) => void
-  /** Load an example at its first step and switch to the Playground. */
+  /** Stop auto play, e.g. when leaving the Playground so it doesn't run unseen. */
+  pause: () => void
+  /** Load an example at its first step. The URL decides which screen shows. */
   loadExample: (id: string) => void
-  /** Open a problem in the Playground: its starter code (or an empty editor), and no trace until a Run. */
+  /** Open a problem: its starter code (or an empty editor), and no trace until a Run. */
   loadProblem: (id: string) => void
   /** Open a random problem the student hasn't passed yet, or any random one if all are passed. */
   loadRandomProblem: () => void
@@ -163,11 +166,11 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
   // What the last visit had open. An id that no longer exists (a removed problem or example) is ignored.
   const savedProblem = getProblem(loadSaved(PROBLEM_KEY) ?? '')
   const savedExampleId = loadSaved(EXAMPLE_KEY)
-  const exampleId = examples.some((example) => example.id === savedExampleId) ? savedExampleId! : examples[0].id
+  const hasSavedExample = examples.some((example) => example.id === savedExampleId)
+  const exampleId = hasSavedExample ? savedExampleId! : examples[0].id
   const startProgram = savedProblem ? problemStartProgram(savedProblem) : getExample(exampleId)
 
   return {
-    activeTab: 'playground',
     exampleId,
     stepIndex: 0,
     isPlaying: false,
@@ -185,9 +188,9 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     checkedCode: null,
     newBadges: [],
     allProblemsSolved: false,
+    restoredFromSave: savedProblem !== undefined || hasSavedExample,
 
-    // Leaving the Playground pauses auto play so it doesn't run unseen.
-    setTab: (tab) => set({ activeTab: tab, isPlaying: false }),
+    pause: () => set({ isPlaying: false }),
 
     loadExample: (id) =>
       set({
@@ -201,7 +204,6 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         inputPrompt: null,
         stepIndex: 0,
         isPlaying: false,
-        activeTab: 'playground',
         problemId: null,
         checkResult: null,
         checkedCode: null,
@@ -225,7 +227,6 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         inputPrompt: null,
         stepIndex: 0,
         isPlaying: false,
-        activeTab: 'playground',
         checkResult: null,
         checkedCode: null,
         newBadges: [],

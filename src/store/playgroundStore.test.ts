@@ -192,10 +192,9 @@ describe('playgroundStore problems', () => {
     useBadgesStore.setState({ unlocked: [], passDays: [], passedProblems: [] })
   })
 
-  it('opens a problem in the Playground with its starter code and no trace yet', () => {
+  it('opens a problem with its starter code and no trace yet', () => {
     store.getState().loadProblem('absoluteValue')
     const state = store.getState()
-    expect(state.activeTab).toBe('playground')
     expect(state.problemId).toBe('absoluteValue')
     expect(state.code).toContain('scanf("%d", &n);')
     expect(state.userProgram?.steps).toHaveLength(1)
@@ -243,7 +242,6 @@ describe('playgroundStore problems', () => {
     useBadgesStore.setState({ passedProblems: problems.slice(0, -1).map((problem) => problem.id) })
     store.getState().loadRandomProblem()
     expect(store.getState().problemId).toBe(lastId)
-    expect(store.getState().activeTab).toBe('playground')
     expect(store.getState().allProblemsSolved).toBe(false)
   })
 
@@ -363,6 +361,7 @@ describe('playgroundStore code persistence', () => {
     expect(code).toBe('int main() { return 0; }')
     // The problem's own opening trace, not the first example's.
     expect(userProgram?.id).toBe('problem-absoluteValue')
+    expect(after.getState().restoredFromSave).toBe(true)
   })
 
   it('reopens the same example after a reload', async () => {
@@ -396,6 +395,8 @@ describe('playgroundStore code persistence', () => {
     expect(after.getState().problemId).toBeNull()
     expect(after.getState().exampleId).toBe(examples[0].id)
     expect(after.getState().code).toBe('kept')
+    // Nothing usable was saved, so a bare / stays on /.
+    expect(after.getState().restoredFromSave).toBe(false)
   })
 
   it('never uses the old "codevision." key, only "livecode."', async () => {
