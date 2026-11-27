@@ -1,9 +1,109 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Only real URLs go here. The tabs (Playground, Examples, Problems, Learn) are app state,
-     not separate URLs yet, so the home page is the one page to list. -->
+<!-- Every real URL: the four sections, then each example and problem (see src/lib/routes.ts).
+     Edit by hand when an example or problem is added or removed; src/lib/routes.test.ts checks it. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://livecode.uz/</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/learn</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/bubble-sort</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/factorial</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/fibonacci</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/matrix</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/max</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/examples/sum</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/absolute-value</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/count-digits</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/count-positives</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/countdown</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/digit-sum</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/discount</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/half-or-triple</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/larger-of-two</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/largest-digit</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/largest-element</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/letter-grade</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/row-sums</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/student-totals</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/sum-of-evens</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/sum-to-n</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+  <url>
+    <loc>https://livecode.uz/problems/times-table</loc>
     <lastmod>2026-11-28</lastmod>
   </url>
 </urlset>

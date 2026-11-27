@@ -1,8 +1,10 @@
 import CodeMirror from '@uiw/react-codemirror'
+import { Link } from 'react-router'
 import Chip from '../../components/Chip'
 import { examples } from '../../data/examples'
 import { useTranslation } from '../../i18n/useTranslation'
 import { track } from '../../lib/analytics'
+import { examplePath } from '../../lib/routes'
 import { usePlaygroundStore } from '../../store/playgroundStore'
 import { cLanguage, codeMirrorTheme, codePreview } from '../playground/codeMirrorTheme'
 
@@ -11,7 +13,6 @@ const previewLineCount = 4
 
 function ExamplesScreen() {
   const exampleId = usePlaygroundStore((state) => state.exampleId)
-  const loadExample = usePlaygroundStore((state) => state.loadExample)
   const problemId = usePlaygroundStore((state) => state.problemId)
   const { t, exampleText } = useTranslation()
 
@@ -29,13 +30,12 @@ function ExamplesScreen() {
           .trimEnd()
 
         return (
-          <button
+          // A real link, so it can be copied or opened in a new tab. Going to its URL loads the example
+          // (useRouteSync); the click itself only counts the pick from this list.
+          <Link
             key={example.id}
-            type="button"
-            onClick={() => {
-              loadExample(example.id)
-              track('example_opened', { exampleName: example.title })
-            }}
+            to={examplePath(example.id)}
+            onClick={() => track('example_opened', { exampleName: example.title })}
             className={`flex flex-col overflow-hidden rounded-panel border bg-panel text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
               isLoaded ? 'border-accent' : 'border-border hover:border-borderStrong'
             }`}
@@ -57,7 +57,7 @@ function ExamplesScreen() {
               {t('examples.meta', { lines: example.code.length, steps: example.steps.length })}
               {isLoaded && <span className="font-semibold text-accentText"> · {t('examples.loaded')}</span>}
             </div>
-          </button>
+          </Link>
         )
       })}
     </div>
