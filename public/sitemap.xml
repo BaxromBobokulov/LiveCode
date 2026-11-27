@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Only real URLs go here. The tabs (Playground, Examples, Problems, Learn) are app state,
+     not separate URLs yet, so the home page is the one page to list. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://livecode.uz/</loc>
+    <lastmod>2026-11-28</lastmod>
+  </url>
+</urlset>

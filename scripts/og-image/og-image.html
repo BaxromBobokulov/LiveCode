@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  Source for public/og-image.png (the 1200x630 link preview image for Telegram, Google, etc.).
+  Colors and fonts match src/theme/colors.css and src/theme/typography.css.
+  To render it again, see scripts/og-image/README.md.
+-->
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 1200px; height: 630px; overflow: hidden; }
+      body {
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
+        color: #15181d;
+        background: #ffffff;
+        position: relative;
+      }
+      /* Soft accent glow behind the mascot */
+      .glow {
+        position: absolute; right: -120px; top: -80px;
+        width: 720px; height: 720px; border-radius: 50%;
+        background: radial-gradient(circle, #edf1ff 0%, #edf1ff 45%, rgba(237, 241, 255, 0) 70%);
+      }
+      .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: #2e5bff; }
+      .text {
+        position: absolute; left: 80px; top: 72px; bottom: 70px; width: 680px;
+        display: flex; flex-direction: column; align-items: flex-start;
+      }
+      .brand { display: flex; align-items: center; gap: 14px; font-size: 34px; font-weight: 700; }
+      .brand img { width: 52px; height: 52px; border-radius: 12px; }
+      h1 {
+        margin-top: 36px; font-size: 52px; line-height: 62px; font-weight: 700; letter-spacing: -0.5px;
+      }
+      h1 span { color: #2e5bff; white-space: nowrap; }
+      .sub { margin-top: 24px; font-size: 24px; line-height: 34px; color: #4a5160; }
+      .url {
+        margin-top: auto;
+        font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 500;
+        color: #2e5bff; background: #edf1ff; padding: 10px 20px; border-radius: 10px;
+      }
+      /* The mascot PNG has square black corners, so round them off to its own corner radius. */
+      .mascot { position: absolute; right: 70px; top: 135px; width: 350px; height: 350px; border-radius: 81px; }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="text">
+      <div class="brand"><img src="../../src/assets/pictures/favicon.png" alt="" />LiveCode</div>
+      <h1>Kodingiz qanday ishlashini<br /><span>qadamma-qadam</span> ko'ring</h1>
+      <p class="sub">C dasturlashni vizual o'rganing.<br />O'zbek, rus va ingliz tillarida.</p>
+      <div class="url">livecode.uz</div>
+    </div>
+    <img class="mascot" src="../../src/assets/pictures/favicon.png" alt="" />
+    <div class="bar"></div>
+  </body>
+</html>

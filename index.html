@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="uz">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/" href="/src/assets/pictures/favicon.png" />
@@ -11,18 +11,32 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <title>LiveCode — A Visual Code Learning Platform</title>
+    <!-- Uzbek is the main audience. The app swaps the title and lang to the chosen language at runtime
+         (applyLocale in src/store/settingsStore.ts); crawlers and link previews read what is here. -->
+    <title>LiveCode — Kodni vizual o'rganish platformasi</title>
+    <link rel="canonical" href="https://livecode.uz/" />
     <meta
       name="description"
       content="Yozgan kodingiz qanday ishlashini qadamma-qadam ko'ring: o'zgaruvchilar, massivlar, izohlar. Boshlovchilar uchun, o'zbek, rus va ingliz tillarida."
     />
-    <meta property="og:title" content="LiveCode — A Visual Code Learning Platform" />
+    <meta property="og:title" content="LiveCode — Kodni vizual o'rganish platformasi" />
     <meta
       property="og:description"
       content="Yozgan kodingiz qanday ishlashini qadamma-qadam ko'ring: o'zgaruvchilar, massivlar, izohlar. Boshlovchilar uchun, o'zbek, rus va ingliz tillarida."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://livecode-chi.vercel.app/" />
+    <meta property="og:url" content="https://livecode.uz/" />
+    <meta property="og:site_name" content="LiveCode" />
+    <meta property="og:locale" content="uz_UZ" />
+    <meta property="og:locale:alternate" content="ru_RU" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <!-- Made from scripts/og-image/og-image.html, see the README there -->
+    <meta property="og:image" content="https://livecode.uz/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="LiveCode: kodingiz qanday ishlashini qadamma-qadam ko'ring" />
+    <meta name="twitter:card" content="summary_large_image" />
     <!-- Apply the saved (or system) theme before the first paint, so a dark-mode
          reload doesn't flash white. Same key and logic as src/store/settingsStore.ts. -->
     <script>

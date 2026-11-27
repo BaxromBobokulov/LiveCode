@@ -32,7 +32,8 @@ function App() {
             {/* <div className="flex size-8 items-center justify-center rounded-container bg-accent text-white"> */}
               <LogoMark className="size-6" />
             {/* </div> */}
-            <span className="text-brand text-text">LiveCode</span>
+            {/* The page's one <h1>: the product name, on every tab. Same look as before (Tailwind resets h1 styles). */}
+            <h1 className="text-brand text-text">LiveCode</h1>
           </div>
           <div className="flex max-w-full flex-wrap items-center gap-3">
             <Tabs tabs={tabs} value={activeTab} onChange={setTab} />

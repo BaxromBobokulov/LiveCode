@@ -6,6 +6,8 @@ import type { Locale } from '../store/settingsStore'
 // "{name}" is a placeholder that useTranslation fills in. Names, numbers and bits of code
 // filled into a sentence (arr, i, 4 + 8) stay as written in every language.
 const en = {
+  // The browser tab title. index.html holds the Uzbek one for crawlers and link previews.
+  'app.title': 'LiveCode — A Visual Code Learning Platform',
   'nav.playground': 'Playground',
   'nav.examples': 'Examples',
   'nav.problems': 'Problems',
@@ -553,6 +555,7 @@ const en = {
 export type TranslationKey = keyof typeof en
 
 const uz: Record<TranslationKey, string> = {
+  'app.title': "LiveCode — Kodni vizual o'rganish platformasi",
   'nav.playground': 'Maydon',
   'nav.examples': 'Misollar',
   'nav.problems': 'Masalalar',
@@ -1104,6 +1107,7 @@ const uz: Record<TranslationKey, string> = {
 }
 
 const ru: Record<TranslationKey, string> = {
+  'app.title': 'LiveCode — Платформа для визуального изучения кода',
   'nav.playground': 'Песочница',
   'nav.examples': 'Примеры',
   'nav.problems': 'Задачи',
