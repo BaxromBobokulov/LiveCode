@@ -17,15 +17,15 @@ const EXPLANATION_SIZE_DEFAULT = 15
 export const playbackSpeeds = [0.5, 1, 1.5, 2]
 const PLAYBACK_SPEED_DEFAULT = 1
 
-// Theme, language, the Playground split, the explanation text size, the Auto Play speed and the folded Problems topics are the only preferences CodeVision saves between visits (badges are in badgesStore)
+// Theme, language, the Playground split, the explanation text size, the Auto Play speed and the folded Problems topics are the only preferences LiveCode saves between visits (badges are in badgesStore)
 // (AGENTS.md § State Management Rules).
 // index.html reads the same theme key before the first paint, so keep the two in sync.
-const THEME_KEY = 'codevision.theme'
-const LOCALE_KEY = 'codevision.locale'
-const SPLIT_KEY = 'codevision.splitRatio'
-const EXPLANATION_SIZE_KEY = 'codevision.explanationSize'
-const PLAYBACK_SPEED_KEY = 'codevision.playbackSpeed'
-const COLLAPSED_TOPICS_KEY = 'codevision.collapsedTopics'
+const THEME_KEY = 'livecode.theme'
+const LOCALE_KEY = 'livecode.locale'
+const SPLIT_KEY = 'livecode.splitRatio'
+const EXPLANATION_SIZE_KEY = 'livecode.explanationSize'
+const PLAYBACK_SPEED_KEY = 'livecode.playbackSpeed'
+const COLLAPSED_TOPICS_KEY = 'livecode.collapsedTopics'
 
 // localStorage can throw (private mode, blocked site data), so reading and writing never break the app.
 function load(key: string): string | null {

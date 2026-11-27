@@ -41,9 +41,9 @@ describe('badgesStore', () => {
       setItem: (key: string, value: string) => saved.set(key, value),
     })
     store.getState().recordPass('sum', '2026-10-24')
-    expect(JSON.parse(saved.get('codevision.badges')!)).toEqual(['firstSolve'])
-    expect(JSON.parse(saved.get('codevision.passDays')!)).toEqual(['2026-10-24'])
-    expect(JSON.parse(saved.get('codevision.passedProblems')!)).toEqual(['sum'])
+    expect(JSON.parse(saved.get('livecode.badges')!)).toEqual(['firstSolve'])
+    expect(JSON.parse(saved.get('livecode.passDays')!)).toEqual(['2026-10-24'])
+    expect(JSON.parse(saved.get('livecode.passedProblems')!)).toEqual(['sum'])
   })
 
   it('still works when localStorage throws', () => {

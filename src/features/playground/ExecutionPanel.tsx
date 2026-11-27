@@ -82,6 +82,11 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
   const traceClass = `flex flex-col gap-4.5 ${traceStale ? staleOutline : ''}`
   // Shown while the thing on screen (the error box if there is one, the trace otherwise) is out of date.
   const showStaleNote = runError ? errorStale : traceStale
+  // While a Run's error is up, the trace kept from before (its step count, variables, array and console)
+  // came from other code, so it is hidden instead of sitting under the error as if it were this code's.
+  // Hidden, not removed: the same elements come back when the error clears, so useGrowOnlyHeight and
+  // useFollowChange keep measuring them instead of losing track and snapping to an old height on the next step.
+  const showTrace = runError === null
 
   return (
     // Side by side, the panel stays on screen while the page scrolls the code. It stops 2.5rem short of the
@@ -97,9 +102,11 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
       <header className="flex min-h-11.75 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4.5 py-1">
         <h2 className="text-body-md font-semibold">{t('panel.execution')}</h2>
         <div className="ml-auto flex min-w-0 items-center gap-3">
-          <span className="text-right text-body-sm font-semibold text-textMuted">
-            {t('execution.stepOf', { current: stepIndex + 1, total: totalSteps })}
-          </span>
+          {showTrace && (
+            <span className="text-right text-body-sm font-semibold text-textMuted">
+              {t('execution.stepOf', { current: stepIndex + 1, total: totalSteps })}
+            </span>
+          )}
           <TextSizeControl />
           <MaximizeButton
             isMaximized={isMaximized}
@@ -135,7 +142,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
           </p>
         )}
 
-        {/* The last Run failed: say where and why. The previous trace stays below. */}
+        {/* The last Run failed: say where and why. The older trace is hidden until the error is cleared. */}
         {runError && (
           <div
             role="alert"
@@ -155,7 +162,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
           </div>
         )}
 
-        <div className={traceClass}>
+        <div className={traceClass} hidden={!showTrace}>
           <ProgressBar value={(stepIndex + 1) / totalSteps} />
           {/* The box stays mounted, so it keeps the height it grew to; only the text inside fades in. */}
           <div ref={explanationRef} aria-live="polite" className={explanationClass}>
@@ -181,6 +188,7 @@ function ExecutionPanel({ ref, isMaximized, onToggleMaximize, className = '' }: 
       {/* tabIndex: a scrolling area has to be reachable from the keyboard. */}
       <div
         ref={regionRef}
+        hidden={!showTrace}
         tabIndex={0}
         role="region"
         aria-label={t('panel.executionDetails')}

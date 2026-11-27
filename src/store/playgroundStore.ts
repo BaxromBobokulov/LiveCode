@@ -21,7 +21,7 @@ type PlaygroundState = {
   code: string
   /** Trace of the user's own code from the last successful Run, or null while an example's trace is shown. */
   userProgram: ExampleProgram | null
-  /** Why the last Run failed. The previous trace stays on screen. */
+  /** Why the last Run failed. While it is set, the Execution panel shows the error instead of the older trace. */
   runError: RunError | null
   /** The code that last Run failed on, so an edit after it can be spotted (see `staleness`). */
   failedCode: string | null
@@ -129,23 +129,58 @@ function playsExampleTrace(code: string, exampleId: string, problemId: string | 
   return problemId === null && code === getExample(exampleId).code.join('\n')
 }
 
+// The editor's code is saved in this browser's localStorage (never sent anywhere), so a reload brings it back
+// instead of the first example. Written CODE_SAVE_DELAY_MS after the last edit, not on every keystroke.
+// The open problem (or the loaded example) is saved with it, so a reload reopens the code where it was written:
+// a problem's code comes back with its statement and Check, not as "My code" beside the first example.
+const CODE_KEY = 'livecode.code'
+const PROBLEM_KEY = 'livecode.problemId'
+const EXAMPLE_KEY = 'livecode.exampleId'
+const CODE_SAVE_DELAY_MS = 500
+
+// localStorage can throw (private mode, blocked site data) or be missing (tests run in Node).
+function loadSaved(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/** Saves `value` under `key`, or removes the key for null. */
+function saveValue(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Not saved; the code stays in the editor until the page is reloaded.
+  }
+}
+
 export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
   const lastStepIndex = () => currentProgram(get()).steps.length - 1
 
+  // What the last visit had open. An id that no longer exists (a removed problem or example) is ignored.
+  const savedProblem = getProblem(loadSaved(PROBLEM_KEY) ?? '')
+  const savedExampleId = loadSaved(EXAMPLE_KEY)
+  const exampleId = examples.some((example) => example.id === savedExampleId) ? savedExampleId! : examples[0].id
+  const startProgram = savedProblem ? problemStartProgram(savedProblem) : getExample(exampleId)
+
   return {
     activeTab: 'playground',
-    exampleId: examples[0].id,
+    exampleId,
     stepIndex: 0,
     isPlaying: false,
-    code: examples[0].code.join('\n'),
-    userProgram: null,
+    code: loadSaved(CODE_KEY) ?? startProgram.code.join('\n'),
+    // A reopened problem shows its own "press Run" step, like after loadProblem.
+    userProgram: savedProblem ? startProgram : null,
     runError: null,
     failedCode: null,
     input: '',
     inputMissing: false,
     inputCollapsed: false,
     inputPrompt: null,
-    problemId: null,
+    problemId: savedProblem ? savedProblem.id : null,
     checkResult: null,
     checkedCode: null,
     newBadges: [],
@@ -287,7 +322,8 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
             ? { errorType: 'UnsupportedConstructError', construct: constructName(error), messageKey: error.text.key }
             : { errorType: 'CodeError' },
         )
-        // Keep the previous trace, back on its first step, and show what went wrong.
+        // Keep the previous trace (back on its first step) for when the error is cleared, and show what went wrong.
+        // The Execution panel hides that older trace while the error is up, so it isn't taken for this code's.
         // The Input field opens up again, since the problem may be in its values.
         set({
           runError: result.error,
@@ -300,7 +336,7 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
         return
       }
       set({
-        userProgram: { id: 'user', title: 'Your Code', tag: 'Custom', code: code.split('\n'), steps: result.steps },
+        userProgram: { id: 'user', title: 'My code', tag: 'Custom', code: code.split('\n'), steps: result.steps },
         runError: null,
         failedCode: null,
         inputMissing: false,
@@ -325,6 +361,52 @@ export const usePlaygroundStore = create<PlaygroundState>()((set, get) => {
     },
   }
 })
+
+// Save the code a moment after it stops changing. A save still waiting when the page is closed is done right
+// away, so the last few keystrokes aren't lost.
+let pendingCode: string | null = null
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+
+function flushCodeSave() {
+  clearTimeout(saveTimer)
+  if (pendingCode !== null) saveValue(CODE_KEY, pendingCode)
+  pendingCode = null
+}
+
+usePlaygroundStore.subscribe((state, previous) => {
+  // Opening a problem or an example is one click, not typing: save it and its code right away, together,
+  // so a reload never pairs one problem with another's code.
+  if (state.problemId !== previous.problemId || state.exampleId !== previous.exampleId) {
+    saveValue(PROBLEM_KEY, state.problemId)
+    saveValue(EXAMPLE_KEY, state.exampleId)
+    pendingCode = state.code
+    flushCodeSave()
+    return
+  }
+  if (state.code === previous.code) return
+  pendingCode = state.code
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(flushCodeSave, CODE_SAVE_DELAY_MS)
+})
+
+// pagehide covers closing and reloading. Phones often kill a background tab without it, so going to the
+// background (another app, the tab switcher, the screen locking) saves too.
+if (typeof window !== 'undefined') window.addEventListener('pagehide', flushCodeSave)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushCodeSave()
+  })
+}
+
+/**
+ * Whether the editor holds the student's own code rather than the loaded example: the code was edited away
+ * from it (or brought back from an earlier visit). The editor's title then says "My code", not the example's name.
+ */
+export function useIsOwnCode() {
+  return usePlaygroundStore(
+    (state) => state.problemId === null && state.code !== getExample(state.exampleId).code.join('\n'),
+  )
+}
 
 /** The program loaded in the Playground: an example, or the user's own code after Run. */
 export function useCurrentExample() {

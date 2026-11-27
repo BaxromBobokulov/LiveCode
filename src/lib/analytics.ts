@@ -5,7 +5,7 @@ import type { Locale, Theme } from '../store/settingsStore'
 // Only the event names and props below are ever sent: never code, variable values or typed text.
 // Without VITE_POSTHOG_KEY / VITE_POSTHOG_HOST (e.g. local dev) every call silently does nothing.
 
-/** Every event CodeVision sends, with its props. */
+/** Every event LiveCode sends, with its props. */
 type AnalyticsEvents = {
   example_opened: { exampleName: string }
   code_run: { source: 'example' | 'custom' }

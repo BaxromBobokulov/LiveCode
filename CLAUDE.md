@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file guides Claude Code (and any other AI assistant) working in the CodeVision repository.
+This file guides Claude Code (and any other AI assistant) working in the LiveCode repository.
 
 **Source of truth:** all project rules — tech stack, architecture, UI/styling rules, constraints — live in `AGENTS.md`. Read it fully before writing any code. This file only adds Claude-Code-specific operating notes on top of it.
 

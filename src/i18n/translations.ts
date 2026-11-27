@@ -484,7 +484,7 @@ const en = {
   'example.bubbleSort.tag': 'Loops · Arrays',
   'example.matrix.title': 'Sum of a 3×3 Grid',
   'example.matrix.tag': '2D Arrays',
-  'example.user.title': 'Your Code',
+  'example.user.title': 'My code',
 
   // The Problems section (src/features/problems/). Problem titles and statements live in src/data/problems/.
   'step.problemStart': 'Write your solution in the editor. Press Run to watch it step by step, or Check to see if it is correct.',
@@ -540,14 +540,14 @@ const en = {
   'badge.activeDays.title': '7 days of practice',
   'badge.activeDays.description': 'Solve a problem correctly on 7 different days.',
 
-  'learn.title': 'How CodeVision works',
+  'learn.title': 'How LiveCode works',
   // In the two paragraphs below, the words printf, puts, scanf, rand and srand are shown in the code font.
   'learn.p1':
-    'CodeVision runs a short C program one step at a time. Start from one of the Examples, or type or paste your own program into the Playground editor and press Run. Each step is one line: the editor highlights it and the Execution panel explains what it did in plain language.',
+    'LiveCode runs a short C program one step at a time. Start from one of the Examples, or type or paste your own program into the Playground editor and press Run. Each step is one line: the editor highlights it and the Execution panel explains what it did in plain language.',
   'learn.p2':
     'Variables that changed on the current step are outlined in blue. When a program walks through an array, the array view marks the element in use and the loop tracker counts iterations. Anything printed with printf appears in the console. Use Next and Previous to go at your own pace, or Auto Play to step automatically.',
   'learn.p3':
-    "CodeVision understands a small part of C: int, float and char variables, one- and two-dimensional arrays, text stored in char arrays, if / else, for and while loops, functions, printf and puts for output, scanf for input (type the values into the Input field under the editor before pressing Run), and rand and srand for random numbers. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
+    "LiveCode understands a small part of C: int, float and char variables, one- and two-dimensional arrays, text stored in char arrays, if / else, for and while loops, functions, printf and puts for output, scanf for input (type the values into the Input field under the editor before pressing Run), and rand and srand for random numbers. If your program uses something outside that, Run shows a message naming the line and what isn't supported yet.",
 }
 
 export type TranslationKey = keyof typeof en
@@ -1039,7 +1039,7 @@ const uz: Record<TranslationKey, string> = {
   'example.bubbleSort.tag': 'Sikllar · Massivlar',
   'example.matrix.title': "3×3 jadval yig'indisi",
   'example.matrix.tag': "Ikki o'lchovli massivlar",
-  'example.user.title': 'Sizning kodingiz',
+  'example.user.title': 'Mening kodim',
 
   'step.problemStart': "Yechimingizni muharrirga yozing. Uni qadamma-qadam ko'rish uchun Ishga tushirishni, to'g'riligini bilish uchun Tekshirishni bosing.",
   'step.debugProblemStart': "Muharrirdagi dasturda xato bor. Uni qadamma-qadam ko'rib xatoni topish uchun Ishga tushirishni bosing, keyin tuzatib, Tekshirishni bosing.",
@@ -1094,13 +1094,13 @@ const uz: Record<TranslationKey, string> = {
   'badge.activeDays.title': '7 kunlik faollik',
   'badge.activeDays.description': "7 xil kunda masalani to'g'ri yeching.",
 
-  'learn.title': 'CodeVision qanday ishlaydi',
+  'learn.title': 'LiveCode qanday ishlaydi',
   'learn.p1':
-    "CodeVision qisqa C dasturini qadamma-qadam bajaradi. Misollardan birini tanlang yoki o'z dasturingizni Maydon muharririga yozing yoki joylang va Ishga tushirish tugmasini bosing. Har bir qadam bitta qator: muharrir uni ajratib ko'rsatadi, Bajarilish paneli esa u nima qilganini oddiy tilda tushuntiradi.",
+    "LiveCode qisqa C dasturini qadamma-qadam bajaradi. Misollardan birini tanlang yoki o'z dasturingizni Maydon muharririga yozing yoki joylang va Ishga tushirish tugmasini bosing. Har bir qadam bitta qator: muharrir uni ajratib ko'rsatadi, Bajarilish paneli esa u nima qilganini oddiy tilda tushuntiradi.",
   'learn.p2':
     "Joriy qadamda o'zgargan o'zgaruvchilar ko'k chiziq bilan belgilanadi. Dastur massiv bo'ylab yurganda, massiv ko'rinishi ishlatilayotgan elementni belgilaydi, sikl kuzatuvchisi esa takrorlanishlarni sanaydi. printf bilan chiqarilgan hamma narsa konsolda paydo bo'ladi. O'z sur'atingizda yurish uchun Keyingi va Oldingi tugmalaridan, avtomatik qadamlash uchun esa Avto ijrodan foydalaning.",
   'learn.p3':
-    "CodeVision C tilining kichik bir qismini tushunadi: int, float va char o'zgaruvchilar, bir va ikki o'lchovli massivlar, char massivlaridagi matn, if / else, for va while sikllari, funksiyalar, chiqarish uchun printf va puts, kiritish uchun scanf (qiymatlarni Ishga tushirishdan oldin muharrir ostidagi Kiritish maydoniga yozing), tasodifiy sonlar uchun rand va srand. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
+    "LiveCode C tilining kichik bir qismini tushunadi: int, float va char o'zgaruvchilar, bir va ikki o'lchovli massivlar, char massivlaridagi matn, if / else, for va while sikllari, funksiyalar, chiqarish uchun printf va puts, kiritish uchun scanf (qiymatlarni Ishga tushirishdan oldin muharrir ostidagi Kiritish maydoniga yozing), tasodifiy sonlar uchun rand va srand. Agar dasturingizda bundan tashqaridagi narsa bo'lsa, Ishga tushirish qator raqami va hali qo'llab-quvvatlanmaydigan narsani ko'rsatadi.",
 }
 
 const ru: Record<TranslationKey, string> = {
@@ -1588,7 +1588,7 @@ const ru: Record<TranslationKey, string> = {
   'example.bubbleSort.tag': 'Циклы · Массивы',
   'example.matrix.title': 'Сумма таблицы 3×3',
   'example.matrix.tag': 'Двумерные массивы',
-  'example.user.title': 'Ваш код',
+  'example.user.title': 'Мой код',
 
   'step.problemStart': 'Напишите решение в редакторе. Нажмите «Запустить», чтобы пройти его по шагам, или «Проверить», чтобы узнать, верно ли оно.',
   'step.debugProblemStart': 'В программе в редакторе есть ошибка. Нажмите «Запустить», чтобы пройти её по шагам и найти ошибку, затем исправьте её и нажмите «Проверить».',
@@ -1643,13 +1643,13 @@ const ru: Record<TranslationKey, string> = {
   'badge.activeDays.title': '7 дней практики',
   'badge.activeDays.description': 'Решите задачу верно в 7 разных дней.',
 
-  'learn.title': 'Как работает CodeVision',
+  'learn.title': 'Как работает LiveCode',
   'learn.p1':
-    'CodeVision выполняет короткую программу на C по одному шагу. Начните с одного из Примеров или напишите либо вставьте свою программу в редактор Песочницы и нажмите «Запустить». Каждый шаг — одна строка: редактор подсвечивает её, а панель «Выполнение» простыми словами объясняет, что она сделала.',
+    'LiveCode выполняет короткую программу на C по одному шагу. Начните с одного из Примеров или напишите либо вставьте свою программу в редактор Песочницы и нажмите «Запустить». Каждый шаг — одна строка: редактор подсвечивает её, а панель «Выполнение» простыми словами объясняет, что она сделала.',
   'learn.p2':
     'Переменные, изменившиеся на текущем шаге, обведены синим. Когда программа проходит по массиву, вид массива отмечает используемый элемент, а счётчик цикла считает итерации. Всё, что выведено через printf, появляется в консоли. Переходите по шагам кнопками «Далее» и «Назад» в своём темпе или включите «Автошаг».',
   'learn.p3':
-    'CodeVision понимает небольшую часть языка C: переменные int, float и char, одномерные и двумерные массивы, текст в массивах char, if / else, циклы for и while, функции, printf и puts для вывода, scanf для ввода (значения введите в поле «Ввод» под редактором до нажатия «Запустить»), rand и srand для случайных чисел. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
+    'LiveCode понимает небольшую часть языка C: переменные int, float и char, одномерные и двумерные массивы, текст в массивах char, if / else, циклы for и while, функции, printf и puts для вывода, scanf для ввода (значения введите в поле «Ввод» под редактором до нажатия «Запустить»), rand и srand для случайных чисел. Если в программе есть что-то другое, «Запустить» покажет сообщение с номером строки и тем, что пока не поддерживается.',
 }
 
 export const translations: Record<Locale, Record<TranslationKey, string>> = { en, uz, ru }

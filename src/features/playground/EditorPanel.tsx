@@ -10,7 +10,7 @@ import Select from '../../components/Select'
 import { getProblem } from '../../data/problems'
 import { usesScanf } from '../../engine/interpreter'
 import { useTranslation } from '../../i18n/useTranslation'
-import { useCurrentExample, usePlaygroundStore, useStaleness } from '../../store/playgroundStore'
+import { useCurrentExample, useIsOwnCode, usePlaygroundStore, useStaleness } from '../../store/playgroundStore'
 import { cAutocomplete } from './cCompletions'
 import CopyCodeButton from './CopyCodeButton'
 import ExportImageButton from './ExportImageButton'
@@ -64,9 +64,11 @@ function EditorPanel({ onRun, inputRef, editorRef, isMaximized, onToggleMaximize
   const highlightLine = runError ? runError.line : step.line
   const highlightTone = runError ? 'error' : 'current'
   const highlightStale = runError ? errorStale : traceStale
-  // An open problem keeps its own title, also once Run has traced the student's code.
+  // An open problem keeps its own title, also once Run has traced the student's code. Code edited away from
+  // the loaded example is the student's own, so it gets a generic "My code" title instead of the example's name.
   const problem = problemId === null ? undefined : getProblem(problemId)
-  const title = problem ? problem.title[locale] : exampleText(example, 'title')
+  const isOwnCode = useIsOwnCode()
+  const title = problem ? problem.title[locale] : isOwnCode ? t('example.user.title') : exampleText(example, 'title')
   // basicSetup is off, so the default keymap (Enter = insertNewlineAndIndent) and undo/redo
   // (history + Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are added here explicitly.
   // closeBracketsKeymap goes first so its Backspace (delete an empty pair) wins over the default one,

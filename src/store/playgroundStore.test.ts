@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { examples } from '../data/examples'
 import { problems } from '../data/problems'
 import { CodeError } from '../engine/errors'
 import { useBadgesStore } from './badgesStore'
@@ -254,5 +255,169 @@ describe('playgroundStore problems', () => {
 
     store.getState().loadProblem('absoluteValue')
     expect(store.getState().allProblemsSolved).toBe(false)
+  })
+})
+
+// The store reads the saved code and starts listening for edits when its module loads, so each test stubs
+// localStorage (and window, for the pagehide flush) first and then imports a fresh copy of the module.
+describe('playgroundStore code persistence', () => {
+  let saved: Map<string, string>
+  let pageHide: (() => void) | undefined
+
+  async function freshStore() {
+    vi.resetModules()
+    const module = await import('./playgroundStore')
+    return module.usePlaygroundStore
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    saved = new Map()
+    pageHide = undefined
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    })
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'pagehide') pageHide = listener
+      },
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('starts with the first example when nothing was saved', async () => {
+    const fresh = await freshStore()
+    expect(fresh.getState().code).toBe(examples[0].code.join('\n'))
+  })
+
+  it('brings back the code saved on an earlier visit', async () => {
+    saved.set('livecode.code', 'int main() { return 1; }')
+    const fresh = await freshStore()
+    expect(fresh.getState().code).toBe('int main() { return 1; }')
+  })
+
+  it('waits until typing stops before saving, then saves only the last code', async () => {
+    const fresh = await freshStore()
+    fresh.getState().setCode('a')
+    vi.advanceTimersByTime(300)
+    fresh.getState().setCode('ab')
+    vi.advanceTimersByTime(300)
+    expect(saved.has('livecode.code')).toBe(false)
+
+    vi.advanceTimersByTime(200)
+    expect(saved.get('livecode.code')).toBe('ab')
+  })
+
+  it('saves a pending edit right away when the page is closed', async () => {
+    const fresh = await freshStore()
+    fresh.getState().setCode('unsaved yet')
+    expect(pageHide).toBeTypeOf('function')
+    pageHide!()
+    expect(saved.get('livecode.code')).toBe('unsaved yet')
+  })
+
+  it('saves the code of a newly loaded example too, so a reload keeps it', async () => {
+    const fresh = await freshStore()
+    fresh.getState().setCode('edited')
+    fresh.getState().loadExample(examples[1].id)
+    vi.advanceTimersByTime(500)
+    expect(saved.get('livecode.code')).toBe(examples[1].code.join('\n'))
+  })
+
+  it('saves a pending edit right away when the page goes to the background (phones), but not when it comes back', async () => {
+    let visibilityChange: (() => void) | undefined
+    const fakeDocument = {
+      visibilityState: 'visible',
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'visibilitychange') visibilityChange = listener
+      },
+    }
+    vi.stubGlobal('document', fakeDocument)
+    const fresh = await freshStore()
+    expect(visibilityChange).toBeTypeOf('function')
+
+    fresh.getState().setCode('typed on a phone')
+    visibilityChange!() // still visible: the usual wait applies
+    expect(saved.has('livecode.code')).toBe(false)
+
+    fakeDocument.visibilityState = 'hidden'
+    visibilityChange!()
+    expect(saved.get('livecode.code')).toBe('typed on a phone')
+  })
+
+  it('reopens the same problem after a reload, with the edited code and no "My code" title', async () => {
+    const before = await freshStore()
+    before.getState().loadProblem('absoluteValue')
+    before.getState().setCode('int main() { return 0; }')
+    vi.advanceTimersByTime(500)
+
+    const after = await freshStore()
+    const { problemId, code, userProgram } = after.getState()
+    expect(problemId).toBe('absoluteValue')
+    expect(code).toBe('int main() { return 0; }')
+    // The problem's own opening trace, not the first example's.
+    expect(userProgram?.id).toBe('problem-absoluteValue')
+  })
+
+  it('reopens the same example after a reload', async () => {
+    const before = await freshStore()
+    before.getState().loadExample(examples[2].id)
+    before.getState().setCode('edited')
+    vi.advanceTimersByTime(500)
+
+    const after = await freshStore()
+    expect(after.getState().exampleId).toBe(examples[2].id)
+    expect(after.getState().problemId).toBeNull()
+    expect(after.getState().code).toBe('edited')
+  })
+
+  it('goes back to an example after a reload once the student left the problem for one', async () => {
+    const before = await freshStore()
+    before.getState().loadProblem('absoluteValue')
+    before.getState().loadExample(examples[1].id)
+    vi.advanceTimersByTime(500)
+
+    const after = await freshStore()
+    expect(after.getState().problemId).toBeNull()
+    expect(after.getState().exampleId).toBe(examples[1].id)
+  })
+
+  it('ignores a saved problem or example id that no longer exists', async () => {
+    saved.set('livecode.problemId', 'gone')
+    saved.set('livecode.exampleId', 'gone')
+    saved.set('livecode.code', 'kept')
+    const after = await freshStore()
+    expect(after.getState().problemId).toBeNull()
+    expect(after.getState().exampleId).toBe(examples[0].id)
+    expect(after.getState().code).toBe('kept')
+  })
+
+  it('never uses the old "codevision." key, only "livecode."', async () => {
+    const fresh = await freshStore()
+    fresh.getState().setCode('x')
+    vi.advanceTimersByTime(500)
+    expect([...saved.keys()]).toEqual(['livecode.code'])
+  })
+
+  it('still works when localStorage throws (private mode, blocked site data)', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    const fresh = await freshStore()
+    expect(fresh.getState().code).toBe(examples[0].code.join('\n'))
+    fresh.getState().setCode('typed')
+    expect(() => vi.advanceTimersByTime(500)).not.toThrow()
+    expect(fresh.getState().code).toBe('typed')
   })
 })

@@ -12,11 +12,11 @@ export const badgeIds: BadgeId[] = ['firstSolve', 'activeDays']
 /** How many different calendar days with a fully passing Check unlock the 'activeDays' badge. */
 export const ACTIVE_DAYS_GOAL = 7
 
-const BADGES_KEY = 'codevision.badges'
+const BADGES_KEY = 'livecode.badges'
 // Only the dates ("2026-10-24") of the days with at least one fully passing Check, nothing more detailed.
-const PASS_DAYS_KEY = 'codevision.passDays'
+const PASS_DAYS_KEY = 'livecode.passDays'
 // The ids of the problems with a fully passing Check, for the Problems section's progress and random problem.
-const PASSED_PROBLEMS_KEY = 'codevision.passedProblems'
+const PASSED_PROBLEMS_KEY = 'livecode.passedProblems'
 
 // localStorage can throw (private mode, blocked site data) or be missing (tests run in Node), so
 // reading and writing never break the app: without it, badges work until the page is reloaded.

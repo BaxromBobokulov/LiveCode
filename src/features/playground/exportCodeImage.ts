@@ -44,12 +44,12 @@ function highlightLines(code: string): Token[][] {
   return lines
 }
 
-/** e.g. codevision-code-2026-10-14_15-32-07.png */
+/** e.g. livecode-code-2026-10-14_15-32-07.png */
 function imageFileName(date: Date): string {
   const two = (n: number) => String(n).padStart(2, '0')
   const day = `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`
   const time = `${two(date.getHours())}-${two(date.getMinutes())}-${two(date.getSeconds())}`
-  return `codevision-code-${day}_${time}.png`
+  return `livecode-code-${day}_${time}.png`
 }
 
 /**

@@ -27,7 +27,8 @@
          reload doesn't flash white. Same key and logic as src/store/settingsStore.ts. -->
     <script>
       try {
-        var theme = localStorage.getItem('codevision.theme')
+        // The old "codevision.theme" key too, for the first load before src/lib/migrateStorage.ts renames it.
+        var theme = localStorage.getItem('livecode.theme') || localStorage.getItem('codevision.theme')
         if (theme !== 'light' && theme !== 'dark') {
           theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         }

@@ -1,4 +1,4 @@
-# Scope: CodeVision
+# Scope: LiveCode
 
 A browser app that teaches beginner programmers how C code runs, one step at a time, with live variables, arrays, loops and console output. This slice adds pointer and struct visualization: students see an arrow from a pointer to the variable it points to, and each struct as one box of named fields.
 
