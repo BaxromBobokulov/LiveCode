@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN } from '../constants/layout'
 import { problemTopics } from '../data/problems'
+import { translations } from '../i18n/translations'
 import type { ProblemTopic } from '../data/problems/types'
 import { track } from '../lib/analytics'
 
@@ -97,8 +98,11 @@ function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme
 }
 
+// The tab title follows the language too. index.html starts it in Uzbek, which is what
+// crawlers and link previews read, since they don't run this code.
 function applyLocale(locale: Locale) {
   document.documentElement.lang = locale
+  document.title = translations[locale]['app.title']
 }
 
 // The text-explanation size in src/theme/typography.css reads this variable.
